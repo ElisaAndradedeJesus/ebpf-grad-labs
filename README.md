@@ -4,6 +4,23 @@ Bem-vindos à disciplina prática de **eBPF (Extended Berkeley Packet Filter)**.
 
 ---
 
+## Sumario
+
+1. [O que é o eBPF?](#O-que-é-o-eBPF)
+2. [O Contrato com o Kernel](0-contrato-com-o-kernel)
+3. [Requisitos](#requisitos)
+4. [Instalar o WSL2 e o Ubuntu](#instalar-o-wsl2-e-o-ubuntu)
+2. [Por que WSL2](#por-que-wsl2)
+4. [Abrir o Ubuntu](#abrir-o-ubuntu)
+5. [Atualizar o Ubuntu](#atualizar-o-ubuntu)
+6. [Instalar dependencias comuns](#instalar-dependencias-comuns)
+7. [Instalar e testar o Docker](#instalar-e-testar-o-docker)
+8. [Instalar e testar o Containerlab](#instalar-e-testar-o-containerlab)
+9. [Clonar o repositorio](#clonar-o-repositorio)
+10. [Cuidados especificos no WSL2](#cuidados-especificos-no-wsl2)
+11. [Solucoes de problemas](#solucoes-de-problemas)
+12. [Referencias](#referencias)
+
 ## 🧠 O que é o eBPF? (Introdução Teórica)
 
 Historicamente, o sistema operacional é dividido em dois espaços por motivos de segurança e estabilidade:
@@ -30,8 +47,414 @@ A segurança do eBPF é garantida pelo **Verificador (Verifier)**: um juiz estri
 
 ---
 
-## 🛠️ Pré-requisitos do Laboratório
+## Requisitos
 
-Para compilar e rodar os programas eBPF, instale:
+No Windows:
+
+- Windows 11.
+- Virtualizacao habilitada no firmware/BIOS.
+- PowerShell.
+- Acesso a internet para baixar Ubuntu, Docker, Containerlab e imagens Docker.
+
+No Ubuntu WSL2:
+
+- usuario com permissao de `sudo`;
+- pelo menos 10 GB livres para imagens Docker e builds;
+- 16 GB de RAM ou mais e recomendado para executar os laboratorios com folga.
+
+## Instalar o WSL2 e o Ubuntu
+
+Abra o PowerShell no Windows e execute:
+
+```powershell
+wsl --install
+```
+
+Esse comando habilita os componentes necessarios do WSL e instala uma distribuicao Ubuntu por padrao. 
+
+Na primeira abertura do Ubuntu, o sistema vai pedir:
+
+1. nome de usuario Linux;
+2. senha Linux;
+3. confirmacao da senha.
+
+Essa senha sera usada com `sudo` dentro do Ubuntu. Ela nao precisa ser igual a senha do Windows.
+
+Se precisar listar as distribuicoes disponiveis:
+
+```powershell
+wsl --list --online
+```
+
+Se o Ubuntu 26.04 aparecer na lista, ele pode ser instalado explicitamente com o nome exibido pelo proprio comando. Exemplo:
+
+```powershell
+wsl --install -d Ubuntu-26.04
+```
+**Se o Windows pedir para reiniciar o computador, reinicie antes de continuar.**
+
+## Abrir o Ubuntu
+
+Voce pode abrir o Ubuntu pelo menu Iniciar do Windows ou digitando no PowerShell:
+
+```powershell
+wsl
+```
+
+Nao execute comandos dentro de pastas do sistema do Windows, como:
+
+```text
+/mnt/c/WINDOWS/system32
+```
+
+Executar comandos a partir desse diretorio pode causar erro de permissao porque o Windows protege pastas do sistema.
+
+Antes de executar qualquer comando, volte para sua home Linux:
+
 ```bash
-sudo apt update && sudo apt install -y clang llvm bpftool libbpf-dev linux-headers-$(uname -r) iproute2
+cd ~
+```
+
+
+
+## Atualizar o Ubuntu
+
+Dentro do Ubuntu:
+
+```bash
+sudo apt update
+sudo apt upgrade -y
+```
+
+O comando `apt update` atualiza a lista de pacotes disponiveis. O comando `apt upgrade -y` atualiza os pacotes ja instalados.
+
+Instale tambem utilitarios basicos usados pelos comandos de instalacao:
+
+```bash
+sudo apt install -y ca-certificates curl wget gnupg lsb-release software-properties-common apt-transport-https
+```
+
+## Instalar dependencias comuns
+
+Os READMEs dos laboratorios explicam a execucao de cada experimento, mas alguns pacotes sao usados antes ou ao redor deles.
+
+Instale o conjunto comum abaixo no Ubuntu WSL2:
+
+```bash
+sudo apt install -y \
+  git curl wget ca-certificates gnupg lsb-release software-properties-common \
+  build-essential make cmake pkg-config gcc gcc-multilib \
+  clang llvm clang-18 llvm-18 \
+  libbpf-dev libelf-dev zlib1g-dev libpcap-dev libssl-dev libcap-dev libnuma-dev \
+  bpftool bpfcc-tools python3-bpfcc libbpfcc-dev \
+  python3 python3-pip python3-dev python3-venv \
+  iproute2 net-tools iputils-ping tcpdump iperf3 hping3 ethtool \
+  linux-headers-generic linux-tools-common linux-tools-generic \
+  dwarves pahole trace-cmd tmux vim nano file
+```
+
+Durante a instalacao, o pacote `iperf3` pode abrir uma tela perguntando:
+
+```text
+Start Iperf3 as a daemon automatically?
+```
+
+Escolha `<No>`. Use `Tab` para alternar entre as opcoes e `Enter` para confirmar. Nos laboratorios, o `iperf3` e iniciado manualmente pelos comandos ou scripts, entao nao precisa ficar rodando automaticamente no Ubuntu/WSL2.
+
+Os laboratorios mais avancados podem depender de cgroup v2 e BTF do kernel. Esses detalhes aparecem em [Cuidados especificos no WSL2](#cuidados-especificos-no-wsl2) e nas solucoes de problemas.
+
+## Instalar e testar o Docker
+
+Antes de instalar o Docker, garanta que o `apt update` nao esta falhando:
+
+```bash
+sudo apt update
+```
+
+Se aparecer erro envolvendo `apt.llvm.org/resolute`, remova a fonte quebrada antes de continuar:
+
+```bash
+sudo rm -f /etc/apt/sources.list.d/*apt_llvm_org*
+sudo apt update
+```
+
+Instale o Docker Engine:
+
+```bash
+curl -fsSL https://get.docker.com -o get-docker.sh
+sudo sh get-docker.sh
+```
+
+O instalador pode avisar que detectou WSL e recomendar Docker Desktop. Para este ambiente, continue com o Docker Engine dentro do Ubuntu WSL2.
+
+## Instalar e testar o Containerlab
+
+Instale o Containerlab:
+
+```bash
+bash -c "$(curl -sL https://get.containerlab.dev)"
+```
+
+## Clonar o repositorio
+
+
+Clone o repositorio:
+
+```bash
+git clone https://github.com/nerds-ufes/Prog-Networks-2026.git
+cd Prog-Networks-2026
+```
+
+Confirme onde voce esta:
+
+```bash
+pwd
+ls
+```
+
+O caminho deve estar dentro de `/home/seu_usuario/Prog-Networks-2026`, nao em `/mnt/c/...`.
+
+## Por que WSL2
+
+WSL2 permite executar Linux no Windows 11 com um kernel Linux real, sem depender de uma maquina virtual tradicional. Para esta disciplina, isso e util porque os laboratorios usam Docker, Containerlab, eBPF, XDP, `bpftool`, `clang`, `libbpf` e ferramentas de rede Linux.
+
+Vantagens:
+
+- usa ambiente Linux sem trocar o sistema operacional principal;
+- permite executar Docker e Containerlab dentro do Ubuntu;
+- oferece suporte a recursos Linux necessarios para os laboratorios.
+
+Limitacoes:
+
+- o kernel do WSL2 nao é um kernel Ubuntu generico;
+- alguns pacotes `linux-tools-$(uname -r)` podem nao existir para kernels Microsoft do WSL2;
+- recursos eBPF avancados dependem de BTF, cgroup v2 e permissao de administrador dentro do Linux;
+
+## Cuidados especificos no WSL2
+
+### Trabalhe dentro de `/home`
+
+Dê preferencia a executar builds e laboratórios dentro do repositório do projeto:
+
+```bash
+cd ~/Prog-Networks-2026
+```
+
+Alem de permissoes diferentes, o desempenho de I/O costuma ser pior e alguns scripts podem falhar ao montar volumes ou criar arquivos.
+
+### Use `sudo` nos comandos de Docker e Containerlab
+
+Os laboratorios assumem comandos com privilegios. Prefira:
+
+```bash
+sudo docker ps
+sudo containerlab version
+```
+
+### Inicie o Docker ao abrir uma nova sessao WSL
+
+Se o Docker nao estiver ativo:
+
+```bash
+sudo service docker start
+```
+
+Depois confira:
+
+```bash
+sudo docker ps
+```
+
+### Cuidado com `linux-tools-$(uname -r)`
+
+No WSL2, `uname -r` pode retornar um kernel Microsoft. Nesses casos, pacotes como `linux-tools-$(uname -r)` ou `linux-cloud-tools-$(uname -r)` podem nao existir nos repositorios Ubuntu.
+
+Quando isso acontecer, use primeiro:
+
+```bash
+sudo apt install -y bpftool linux-tools-common linux-tools-generic
+```
+
+Se um script tentar instalar ferramentas exatamente para o kernel WSL e falhar, verifique se o comando era apenas auxiliar para disponibilizar `bpftool`. Em muitos casos, o `bpftool` generico ou o `bpftool` dentro da imagem Docker do laboratorio e suficiente.
+
+### Confirme BTF antes dos labs com CO-RE
+
+Alguns programas precisam de `/sys/kernel/btf/vmlinux` para gerar `vmlinux.h`.
+
+```bash
+ls -lh /sys/kernel/btf/vmlinux
+```
+
+Se o arquivo nao existir, atualize o WSL no PowerShell:
+
+```powershell
+wsl --update
+wsl --shutdown
+```
+
+Abra o Ubuntu novamente e repita a verificacao.
+
+### Confirme cgroup v2 antes dos labs SockOps
+
+```bash
+mount | grep cgroup2
+```
+
+Os scripts de metricas TCP anexam programas ao cgroup raiz em `/sys/fs/cgroup`.
+
+
+## Solucoes de problemas
+
+### `Permission denied` ao clonar ou executar comandos
+
+Verifique onde voce esta:
+
+```bash
+pwd
+```
+
+Se estiver em `/mnt/c/WINDOWS/system32` ou outra pasta protegida do Windows, volte para a home Linux:
+
+```bash
+cd ~
+```
+
+Clone e execute o repositorio dentro de `/home/seu_usuario`.
+
+### Docker daemon nao esta rodando
+
+```bash
+sudo service docker start
+sudo docker info
+```
+
+### Docker sem permissao
+
+Use `sudo`, que e o padrao deste guia:
+
+```bash
+sudo docker ps
+sudo docker run --rm hello-world
+```
+
+### Containerlab nao encontrado
+
+```bash
+containerlab version
+which containerlab
+```
+
+Se nao existir, reinstale:
+
+```bash
+bash -c "$(curl -sL https://get.containerlab.dev)"
+```
+
+### `bpftool` nao encontrado
+
+```bash
+which bpftool
+sudo apt install -y bpftool linux-tools-common linux-tools-generic
+```
+
+Em kernels WSL2, evite depender exclusivamente de `linux-tools-$(uname -r)`, porque esse pacote pode nao existir.
+
+### `/sys/kernel/btf/vmlinux` nao existe
+
+```bash
+ls -lh /sys/kernel/btf/vmlinux
+uname -r
+```
+
+Atualize o WSL no PowerShell:
+
+```powershell
+wsl --update
+wsl --shutdown
+```
+
+Depois abra o Ubuntu novamente.
+
+### cgroup v2 nao encontrado
+
+```bash
+mount | grep cgroup2
+```
+
+Se nao aparecer, reinicie o WSL:
+
+```powershell
+wsl --shutdown
+```
+
+### `clang-18` nao encontrado
+
+```bash
+apt search clang- | grep '^clang-[0-9]'
+```
+
+Instale a versao disponivel exigida pelos scripts de metricas TCP:
+
+```bash
+sudo apt install -y clang-18 llvm-18
+```
+
+Se `clang-14` nao existir no Ubuntu 26.04, ignore esse pacote no fluxo padrao. Ele aparece no `lab-02/bpf_cubic/Makefile`, mas o objeto `bpf_cubic.o` ja esta no repositorio.
+
+### `apt update` falha com `apt.llvm.org/resolute`
+
+Se voce tentou usar `llvm.sh` e apareceu erro como `https://apt.llvm.org/resolute ... 404 Not Found`, remova a fonte quebrada:
+
+```bash
+sudo rm -f /etc/apt/sources.list.d/*apt_llvm_org*
+sudo apt update
+```
+
+Esse erro acontece porque o apt.llvm.org pode ainda nao fornecer repositorio para o codename do Ubuntu 26.04.
+
+### Falha no build da imagem `ebpf-host`
+
+O Dockerfile do Lab 02 baixa pacotes Ubuntu, configura o repositorio LLVM e clona o repositorio do kernel Linux para compilar `bpftool`. Verifique internet e DNS:
+
+```bash
+ping -c 3 github.com
+ping -c 3 apt.llvm.org
+```
+
+Reexecute o build:
+
+```bash
+cd ~/Prog-Networks-2026/lab-02
+sudo docker build --no-cache -t ebpf-host:latest ebpf-host/
+```
+
+### Laboratorios antigos ainda ativos
+
+Destrua a topologia correspondente antes de rodar novamente:
+
+```bash
+cd ~/Prog-Networks-2026/lab-01
+sudo containerlab destroy -t lab-ebpf.clab.yml
+
+cd ~/Prog-Networks-2026/lab-03
+sudo containerlab destroy -t ebpf-counter.clab.yml
+
+cd ~/Prog-Networks-2026/lab-02
+sudo containerlab destroy -t topology-04.yml --cleanup
+```
+
+Confira containers restantes:
+
+```bash
+sudo docker ps -a
+```
+
+## Referencias
+
+- Repositorio da disciplina: https://github.com/nerds-ufes/Prog-Networks-2026
+- Microsoft WSL: https://learn.microsoft.com/windows/wsl/install
+- Docker Engine no Ubuntu: https://docs.docker.com/engine/install/ubuntu/
+- Containerlab: https://containerlab.dev/install/
+- eBPF: https://ebpf.io/
+- libbpf: https://github.com/libbpf/libbpf
+- BCC: https://github.com/iovisor/bcc
