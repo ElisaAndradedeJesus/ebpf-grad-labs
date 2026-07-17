@@ -1,7 +1,8 @@
 #include <linux/bpf.h>
 #include <bpf/bpf_helpers.h>
 
-SEC("kprobe/sys_execve")
+/* Símbolo de execve usado pelo kernel x86-64 do ambiente WSL 2 do curso. */
+SEC("kprobe/__x64_sys_execve")
 int trace_exec(void *ctx)
 {
     char comm[16];

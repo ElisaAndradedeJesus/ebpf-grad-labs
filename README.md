@@ -2,24 +2,27 @@
 
 Bem-vindos à disciplina prática de **eBPF (Extended Berkeley Packet Filter)**. Este repositório contém laboratórios progressivos focados em explorar a fundo como interceptar e programar o Kernel Linux, utilizando ambientes isolados com o **Containerlab**.
 
+> **Ambiente-alvo:** estes laboratórios foram projetados e devem ser validados no Windows 11 com **WSL 2**, Ubuntu, Docker Engine e Containerlab. A execução em outras distribuições ou diretamente sobre Linux pode exigir adaptações nos hooks, caminhos e recursos oferecidos pelo kernel.
+
 ---
 
-## Sumario
+## Sumário
 
-1. [O que é o eBPF?](#O-que-é-o-eBPF)
-2. [O Contrato com o Kernel](0-contrato-com-o-kernel)
-3. [Requisitos](#requisitos)
-4. [Instalar o WSL2 e o Ubuntu](#instalar-o-wsl2-e-o-ubuntu)
-2. [Por que WSL2](#por-que-wsl2)
-4. [Abrir o Ubuntu](#abrir-o-ubuntu)
-5. [Atualizar o Ubuntu](#atualizar-o-ubuntu)
-6. [Instalar dependencias comuns](#instalar-dependencias-comuns)
-7. [Instalar e testar o Docker](#instalar-e-testar-o-docker)
-8. [Instalar e testar o Containerlab](#instalar-e-testar-o-containerlab)
-9. [Clonar o repositorio](#clonar-o-repositorio)
-10. [Cuidados especificos no WSL2](#cuidados-especificos-no-wsl2)
-11. [Solucoes de problemas](#solucoes-de-problemas)
-12. [Referencias](#referencias)
+1. [O que é o eBPF?](#o-que-é-o-ebpf-introdução-teórica)
+2. [O Contrato com o Kernel](#o-contrato-com-o-kernel-tipos-de-programas)
+3. [Preparando o ambiente de desenvolvimento](#preparando-ambiente-de-desenvolvimento)
+   1. [Requisitos](#requisitos)
+   2. [Instalando WSL e Ubuntu](#instalando-wsl-e-ubuntu)
+   3. [Abrir o Ubuntu](#abrir-o-ubuntu)
+   4. [Atualizar o Ubuntu](#atualizar-o-ubuntu)
+   5. [Instalar dependências comuns](#instalar-dependencias-comuns)
+   6. [Instalar e testar o Docker](#instalar-e-testar-o-docker)
+   7. [Instalar e testar o Containerlab](#instalar-e-testar-o-containerlab)
+   8. [Clonar o repositório](#clonar-o-repositorio)
+4. [Por que WSL2](#por-que-wsl2)
+5. [Cuidados específicos no WSL2](#cuidados-especificos-no-wsl2)
+6. [Soluções de problemas](#solucoes-de-problemas)
+7. [Referências](#referencias)
 
 ## 🧠 O que é o eBPF? (Introdução Teórica)
 
@@ -35,19 +38,21 @@ A segurança do eBPF é garantida pelo **Verificador (Verifier)**: um juiz estri
 
 ## 🏗️ O Contrato com o Kernel: Tipos de Programas
 
-[cite_start]Os tipos de programas eBPF (*program types*) definem o "contrato" entre o seu código e o Kernel do Linux[cite: 1]. [cite_start]Cada tipo determina onde o programa pode ser anexado, quais *helpers* (funções auxiliares) ele pode chamar e qual é o formato do contexto (os dados de entrada) que ele recebe[cite: 2].
+Os tipos de programas eBPF (*program types*) definem o "contrato" entre o seu código e o Kernel do Linux. Cada tipo determina onde o programa pode ser anexado, quais *helpers* (funções auxiliares) ele pode chamar e qual é o formato do contexto (os dados de entrada) que ele recebe.
 
-[cite_start]Eles são divididos nas seguintes categorias principais[cite: 3]:
+Eles são divididos nas seguintes categorias principais:
 
-1. [cite_start]**Networking (Rede):** A categoria mais popular, onde o eBPF brilha ao processar pacotes em alta velocidade[cite: 4, 5]. [cite_start]Inclui o **XDP** (executado no driver da placa de rede) [cite: 6] [cite_start]e o **TC** (Traffic Control, anexado à camada de roteamento do kernel)[cite: 8].
-2. [cite_start]**Tracing e Monitoramento:** Permitem observar o comportamento interno do sistema operacional e de aplicações em tempo real, sem reinicialização[cite: 11, 12]. [cite_start]Inclui o **Kprobe**, que permite anexar código eBPF a quase qualquer função interna do Kernel[cite: 13].
-3. [cite_start]**Segurança e Controle de Acesso:** Focados em garantir que o sistema opere dentro de políticas permitidas[cite: 19, 20]. [cite_start]Inclui o **LSM (Linux Security Modules)**, que permite criar políticas para vetar operações diretamente nos ganchos de segurança do sistema[cite: 21].
+1. **Networking (Rede):** A categoria mais popular, onde o eBPF brilha ao processar pacotes em alta velocidade[cite: 4, 5]. Inclui o **XDP** (executado no driver da placa de rede) e o **TC** (Traffic Control, anexado à camada de roteamento do kernel).
+2. **Tracing e Monitoramento:** Permitem observar o comportamento interno do sistema operacional e de aplicações em tempo real, sem reinicialização. Inclui o **Kprobe**, que permite anexar código eBPF a quase qualquer função interna do Kernel.
+3. **Segurança e Controle de Acesso:** Focados em garantir que o sistema opere dentro de políticas permitidas. Inclui o **LSM (Linux Security Modules)**, que permite criar políticas para vetar operações diretamente nos ganchos de segurança do sistema.
 
-[cite_start]O Kernel impõe restrições rígidas por segurança[cite: 29]. [cite_start]Um programa de Tracing tem acesso a quase tudo do sistema, mas não pode modificar o conteúdo de um pacote de rede[cite: 30]. [cite_start]Por outro lado, um programa XDP de rede não consegue ler o nome de um arquivo sendo aberto pelo usuário[cite: 75].
+O Kernel impõe restrições rígidas por segurança. Um programa de Tracing tem acesso a quase tudo do sistema, mas não pode modificar o conteúdo de um pacote de rede. Por outro lado, um programa XDP de rede não consegue ler o nome de um arquivo sendo aberto pelo usuário.
 
 ---
 
-## Requisitos
+## Preparando Ambiente de Desenvolvimento
+
+### Requisitos
 
 No Windows:
 
@@ -62,7 +67,7 @@ No Ubuntu WSL2:
 - pelo menos 10 GB livres para imagens Docker e builds;
 - 16 GB de RAM ou mais e recomendado para executar os laboratorios com folga.
 
-## Instalar o WSL2 e o Ubuntu
+### Instalando WSL e Ubuntu
 
 Abra o PowerShell no Windows e execute:
 
@@ -93,7 +98,7 @@ wsl --install -d Ubuntu-26.04
 ```
 **Se o Windows pedir para reiniciar o computador, reinicie antes de continuar.**
 
-## Abrir o Ubuntu
+### Abrir o Ubuntu
 
 Voce pode abrir o Ubuntu pelo menu Iniciar do Windows ou digitando no PowerShell:
 
@@ -117,7 +122,7 @@ cd ~
 
 
 
-## Atualizar o Ubuntu
+### Atualizar o Ubuntu
 
 Dentro do Ubuntu:
 
@@ -134,7 +139,7 @@ Instale tambem utilitarios basicos usados pelos comandos de instalacao:
 sudo apt install -y ca-certificates curl wget gnupg lsb-release software-properties-common apt-transport-https
 ```
 
-## Instalar dependencias comuns
+### Instalar dependencias comuns
 
 Os READMEs dos laboratorios explicam a execucao de cada experimento, mas alguns pacotes sao usados antes ou ao redor deles.
 
@@ -163,7 +168,7 @@ Escolha `<No>`. Use `Tab` para alternar entre as opcoes e `Enter` para confirmar
 
 Os laboratorios mais avancados podem depender de cgroup v2 e BTF do kernel. Esses detalhes aparecem em [Cuidados especificos no WSL2](#cuidados-especificos-no-wsl2) e nas solucoes de problemas.
 
-## Instalar e testar o Docker
+### Instalar e testar o Docker
 
 Antes de instalar o Docker, garanta que o `apt update` nao esta falhando:
 
@@ -187,7 +192,7 @@ sudo sh get-docker.sh
 
 O instalador pode avisar que detectou WSL e recomendar Docker Desktop. Para este ambiente, continue com o Docker Engine dentro do Ubuntu WSL2.
 
-## Instalar e testar o Containerlab
+### Instalar e testar o Containerlab
 
 Instale o Containerlab:
 
@@ -195,14 +200,15 @@ Instale o Containerlab:
 bash -c "$(curl -sL https://get.containerlab.dev)"
 ```
 
-## Clonar o repositorio
+### Clonar o repositorio
 
 
 Clone o repositorio:
 
 ```bash
-git clone https://github.com/nerds-ufes/Prog-Networks-2026.git
-cd Prog-Networks-2026
+git clone https://github.com/ElisaAndradedeJesus/ebpf-grad-labs.git
+cd ebpf-grad-labs
+
 ```
 
 Confirme onde voce esta:
@@ -212,7 +218,7 @@ pwd
 ls
 ```
 
-O caminho deve estar dentro de `/home/seu_usuario/Prog-Networks-2026`, nao em `/mnt/c/...`.
+O caminho deve estar dentro de `/home/seu_usuario/ebpf-grad-labs`, nao em `/mnt/c/...`.
 
 ## Por que WSL2
 
@@ -237,7 +243,7 @@ Limitacoes:
 Dê preferencia a executar builds e laboratórios dentro do repositório do projeto:
 
 ```bash
-cd ~/Prog-Networks-2026
+cd ~/ebpf-grad-labs
 ```
 
 Alem de permissoes diferentes, o desempenho de I/O costuma ser pior e alguns scripts podem falhar ao montar volumes ou criar arquivos.
@@ -412,7 +418,7 @@ sudo apt update
 
 Esse erro acontece porque o apt.llvm.org pode ainda nao fornecer repositorio para o codename do Ubuntu 26.04.
 
-### Falha no build da imagem `ebpf-host`
+<!-- ### Falha no build da imagem `ebpf-host`
 
 O Dockerfile do Lab 02 baixa pacotes Ubuntu, configura o repositorio LLVM e clona o repositorio do kernel Linux para compilar `bpftool`. Verifique internet e DNS:
 
@@ -426,11 +432,13 @@ Reexecute o build:
 ```bash
 cd ~/Prog-Networks-2026/lab-02
 sudo docker build --no-cache -t ebpf-host:latest ebpf-host/
-```
+``` -->
 
 ### Laboratorios antigos ainda ativos
 
 Destrua a topologia correspondente antes de rodar novamente:
+
+<!-- tenho q adaptar essa parte ao laboratório atual, mas ainda n fiz isso pois ainda n tenhocerteza de como vão ficar os labs -->
 
 ```bash
 cd ~/Prog-Networks-2026/lab-01
@@ -450,6 +458,8 @@ sudo docker ps -a
 ```
 
 ## Referencias
+
+<!-- Olha, esses links n deixaram de ser referencia a pesar que que n estarei fazendo exatamente igual ao Prog-Networks-2026 -->
 
 - Repositorio da disciplina: https://github.com/nerds-ufes/Prog-Networks-2026
 - Microsoft WSL: https://learn.microsoft.com/windows/wsl/install
