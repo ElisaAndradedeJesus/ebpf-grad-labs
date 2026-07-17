@@ -33,6 +33,14 @@ if ! mountpoint -q /sys/fs/bpf; then
     mount -t bpf bpf /sys/fs/bpf
 fi
 
+if ! mountpoint -q /sys/kernel/security; then
+    echo "Preparando o securityfs em /sys/kernel/security..."
+    mkdir -p /sys/kernel/security
+    if ! mount -t securityfs securityfs /sys/kernel/security; then
+        echo "AVISO: não foi possível montar securityfs; a verificação do BPF LSM pode ficar indisponível."
+    fi
+fi
+
 echo "[1/4] Gerando vmlinux.h e compilando os programas..."
 bpftool btf dump file /sys/kernel/btf/vmlinux format c > "$VMLINUX_H"
 
