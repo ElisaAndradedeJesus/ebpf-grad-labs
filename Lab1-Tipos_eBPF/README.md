@@ -31,9 +31,9 @@ O resultado de `pwd` deve terminar em `/ebpf-grad-labs`, e o comando `ls` deve m
 
 - `kprobe_exec.bpf.c`: registra a execução de processos;
 - `lsm_block.bpf.c`: tenta impedir a execução do `curl`;
-- `run_and_test.sh`: prepara, compila, carrega, testa e remove os programas.
+- `Makefile`: prepara, compila, carrega, testa e remove os programas.
 
-O script gera `vmlinux.h`, compila os programas e monta o BPF filesystem em `/sys/fs/bpf` caso ele ainda não esteja montado. Os arquivos gerados são removidos ao final.
+O Makefile gera `vmlinux.h`, compila os programas e monta `bpffs` e `securityfs` caso ainda não estejam montados. Os arquivos gerados são removidos ao final.
 
 ## Executar o laboratório
 
@@ -51,23 +51,23 @@ Confira os arquivos:
 ls
 ```
 
-### 2. Conceda permissão de execução ao script
+### 2. Verifique as dependências
 
-Este comando precisa ser executado apenas na primeira vez:
-
-```bash
-chmod +x run_and_test.sh
-```
-
-### 3. Execute o script
-
-O carregamento de programas eBPF e a montagem do BPF filesystem exigem privilégios administrativos:
+Execute:
 
 ```bash
-sudo ./run_and_test.sh
+make check
 ```
 
-O script deve:
+### 3. Execute o laboratório
+
+O Makefile solicitará `sudo` apenas nas operações que exigem privilégios administrativos:
+
+```bash
+make run
+```
+
+O comando deve:
 
 1. verificar a disponibilidade de BTF;
 2. preparar `/sys/fs/bpf`;
@@ -77,9 +77,39 @@ O script deve:
 6. verificar se BPF LSM está ativo;
 7. aguardar antes de remover os programas.
 
-Não pressione Enter quando aparecer a mensagem final. Deixe esse terminal aberto enquanto realiza o teste do Kprobe.
+Quando aparecer a mensagem abaixo, a preparação terminou e o Kprobe está carregado no kernel:
 
-### 4. Observe os eventos do Kprobe
+```text
+Pressione Enter para encerrar e remover os programas eBPF.
+```
+
+**Não pressione Enter ainda.** Esse será o **Terminal 1**, responsável por manter o laboratório ativo enquanto o teste é realizado.
+
+### 4. Entenda o teste com três terminais
+
+O teste utiliza três terminais Ubuntu ao mesmo tempo. Cada um possui uma responsabilidade diferente:
+
+| Terminal | Responsabilidade | Comando principal |
+|---|---|---|
+| Terminal 1 | Preparar e manter o Kprobe carregado | `make run` |
+| Terminal 2 | Exibir os eventos produzidos pelo Kprobe | `sudo cat /sys/kernel/tracing/trace_pipe` |
+| Terminal 3 | Executar programas para gerar eventos | `ls`, `date` e `whoami` |
+
+O fluxo do experimento é:
+
+```text
+Terminal 3 executa um programa
+              ↓
+O kernel executa __x64_sys_execve
+              ↓
+O Kprobe carregado pelo Terminal 1 é acionado
+              ↓
+O programa eBPF escreve uma mensagem de tracing
+              ↓
+O Terminal 2 exibe a mensagem pelo trace_pipe
+```
+
+### 5. Terminal 2: observe os eventos do Kprobe
 
 Abra um segundo terminal Ubuntu e execute:
 
@@ -93,7 +123,11 @@ Se esse caminho não existir, tente:
 sudo cat /sys/kernel/debug/tracing/trace_pipe
 ```
 
-Deixe o comando em execução. Em um terceiro terminal Ubuntu, execute alguns programas:
+Deixe esse comando em execução. O terminal ficará aparentemente parado enquanto aguarda novas mensagens do kernel. Isso é o comportamento esperado.
+
+### 6. Terminal 3: gere eventos de execução
+
+Abra um terceiro terminal Ubuntu e execute, um de cada vez:
 
 ```bash
 ls
@@ -101,7 +135,9 @@ date
 whoami
 ```
 
-No terminal que está lendo `trace_pipe`, devem aparecer mensagens semelhantes a:
+Esses comandos iniciam novos programas. Cada inicialização passa pela função `__x64_sys_execve`, na qual o Kprobe está anexado.
+
+Volte ao Terminal 2. Devem aparecer mensagens semelhantes a:
 
 ```text
 KPROBE: Processo 'ls' executado!
@@ -109,13 +145,28 @@ KPROBE: Processo 'date' executado!
 KPROBE: Processo 'whoami' executado!
 ```
 
-O nome observado pode variar porque outros processos também executam programas enquanto o Kprobe está ativo.
+O nome e a ordem dos processos podem variar porque o sistema continua executando outros programas enquanto o Kprobe está ativo.
 
-### 5. Interprete o teste do BPF LSM
+### 7. Confirme o programa com bpftool
 
-O script consulta `/sys/kernel/security/lsm` antes de carregar o programa de segurança.
+Ainda no Terminal 3, confirme que o programa está carregado no kernel:
 
-Se BPF LSM estiver ativo, o script carregará o programa e testará `curl --version`. O resultado esperado é:
+```bash
+sudo bpftool prog list | grep -A 4 trace_exec
+```
+
+A saída deve identificar `trace_exec` como um programa do tipo `kprobe`.
+
+O teste do Kprobe é considerado bem-sucedido quando existem as duas evidências:
+
+1. `bpftool` mostra o programa `trace_exec` carregado;
+2. o Terminal 2 mostra mensagens geradas quando os comandos do Terminal 3 são executados.
+
+### 8. Interprete o teste do BPF LSM
+
+O Makefile consulta `/sys/kernel/security/lsm` antes de carregar o programa de segurança.
+
+Se BPF LSM estiver ativo, o Makefile carregará o programa e testará `curl --version`. O resultado esperado é:
 
 ```text
 SUCESSO: a execução do curl foi bloqueada pelo BPF LSM.
@@ -129,11 +180,15 @@ AVISO: BPF LSM não está ativo neste kernel; o teste de bloqueio será ignorado
 
 Esse aviso não significa que a compilação falhou. Ele indica que o kernel foi iniciado sem o BPF LSM na lista de módulos de segurança ativos.
 
-### 6. Encerre e limpe o laboratório
+### 9. Encerre e limpe o laboratório
 
-No terminal que está lendo `trace_pipe`, pressione `Ctrl+C`.
+Siga esta ordem para encerrar:
 
-Depois, volte ao primeiro terminal e pressione Enter. O script removerá:
+1. No Terminal 2, que está lendo `trace_pipe`, pressione `Ctrl+C`.
+2. Volte ao Terminal 1, que ainda mostra a mensagem para pressionar Enter.
+3. Pressione Enter no Terminal 1.
+
+O Makefile removerá:
 
 - programas e links fixados em `/sys/fs/bpf/ebpf_lab1`;
 - `kprobe_exec.bpf.o`;
@@ -142,7 +197,7 @@ Depois, volte ao primeiro terminal e pressione Enter. O script removerá:
 
 ## Confirmar a limpeza
 
-Depois de encerrar o script, execute:
+Depois de encerrar o laboratório, execute no Terminal 3:
 
 ```bash
 sudo test ! -e /sys/fs/bpf/ebpf_lab1 && echo "Lab 1 removido com sucesso"
@@ -150,12 +205,12 @@ sudo test ! -e /sys/fs/bpf/ebpf_lab1 && echo "Lab 1 removido com sucesso"
 
 ## Solução de problemas
 
-### `Execute este laboratório com: sudo ./run_and_test.sh`
+### `Permission denied` durante `make run`
 
-O script foi iniciado sem os privilégios necessários. Execute:
+Execute novamente e informe a senha do usuário Ubuntu quando `sudo` solicitar:
 
 ```bash
-sudo ./run_and_test.sh
+make run
 ```
 
 ### `/sys/kernel/btf/vmlinux não está disponível`
@@ -191,7 +246,7 @@ sudo mount -t bpf bpf /sys/fs/bpf
 Depois, execute novamente:
 
 ```bash
-sudo ./run_and_test.sh
+make run
 ```
 
 ### O Kprobe não consegue encontrar `__x64_sys_execve`
