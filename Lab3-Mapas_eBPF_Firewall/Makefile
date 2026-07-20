@@ -22,20 +22,45 @@ help:
 
 # Verifica ferramentas do host antes de criar containers ou carregar eBPF.
 check:
-	@command -v clang >/dev/null || { echo "ERRO: clang nao encontrado"; exit 1; }
-	@command -v gcc >/dev/null || { echo "ERRO: gcc nao encontrado"; exit 1; }
-	@command -v bpftool >/dev/null || { echo "ERRO: bpftool nao encontrado"; exit 1; }
-	@command -v docker >/dev/null || { echo "ERRO: docker nao encontrado"; exit 1; }
-	@command -v containerlab >/dev/null || { echo "ERRO: containerlab nao encontrado"; exit 1; }
-	@command -v ip >/dev/null || { echo "ERRO: iproute2 nao encontrado"; exit 1; }
-	@sudo docker info >/dev/null || { echo "ERRO: Docker daemon indisponivel"; exit 1; }
+	@command -v clang >/dev/null || { \
+		echo "ERRO: Clang nao foi encontrado; o firewall XDP nao pode ser compilado."; \
+		echo "Instale com: sudo apt update && sudo apt install -y clang llvm"; \
+		echo "Depois, execute novamente: make check"; exit 1; }
+	@command -v gcc >/dev/null || { \
+		echo "ERRO: GCC nao foi encontrado; ele e usado para localizar os headers da arquitetura."; \
+		echo "Instale com: sudo apt install -y build-essential"; exit 1; }
+	@command -v bpftool >/dev/null || { \
+		echo "ERRO: bpftool nao foi encontrado; a blacklist nao pode ser localizada ou atualizada."; \
+		echo "Instale com: sudo apt install -y bpftool"; \
+		echo "Consulte tambem a preparacao do ambiente no README principal."; exit 1; }
+	@command -v docker >/dev/null || { \
+		echo "ERRO: Docker nao foi encontrado; o Containerlab depende dele para criar os hosts."; \
+		echo "Volte ao README principal e conclua a secao 'Instalar e testar o Docker'."; \
+		echo "Instalacao usada pelo curso:"; \
+		echo "  curl -fsSL https://get.docker.com -o get-docker.sh"; \
+		echo "  sudo sh get-docker.sh"; exit 1; }
+	@command -v containerlab >/dev/null || { \
+		echo "ERRO: Containerlab nao foi encontrado; a topologia h1--h2--h3 nao pode ser criada."; \
+		echo "Volte ao README principal e conclua a secao 'Instalar e testar o Containerlab'."; \
+		echo "Instale com: bash -c \"\$$(curl -sL https://get.containerlab.dev)\""; \
+		echo "Depois, confirme com: containerlab version"; exit 1; }
+	@command -v ip >/dev/null || { \
+		echo "ERRO: o comando ip nao foi encontrado; os namespaces nao podem ser configurados."; \
+		echo "Instale com: sudo apt install -y iproute2"; exit 1; }
+	@sudo docker info >/dev/null 2>&1 || { \
+		echo "ERRO: Docker esta instalado, mas o daemon nao esta em execucao ou nao respondeu."; \
+		echo "Inicie com: sudo service docker start"; \
+		echo "Teste com: sudo docker info"; \
+		echo "Se continuar falhando, consulte o README principal."; exit 1; }
 	@echo "Dependencias basicas do Lab 3 encontradas."
 
 # Compila o firewall XDP e preserva informacoes BTF com -g.
 build: check
 	@echo "Compilando o firewall XDP..."
 	@clang -O2 -g -target bpf -D__TARGET_ARCH_x86 -I"$(ARCH_INCLUDE)" \
-		-c xdp_fw_map.bpf.c -o xdp_fw_map.o
+		-c xdp_fw_map.bpf.c -o xdp_fw_map.o || { \
+			echo "ERRO: falha ao compilar o firewall XDP com map."; \
+			echo "Leia o diagnostico do Clang acima e confirme clang, libbpf-dev e os headers."; exit 1; }
 	@echo "Programa eBPF compilado."
 
 # O experimento cria tres namespaces. h1 recebe o XDP na interface ligada a h2;
@@ -47,13 +72,21 @@ build: check
 # little-endian (01 00 00 00). O teste final remove a chave sem recompilar o
 # programa e confirma que a conectividade de h2 volta imediatamente.
 run: build
-	@set -euo pipefail; \
+	@set -Eeuo pipefail; \
 	cleanup() { \
 		sudo containerlab destroy -t topology.yml --cleanup >/dev/null 2>&1 || true; \
 		sudo rm -f /var/run/netns/h1 /var/run/netns/h2 /var/run/netns/h3; \
 		rm -f xdp_fw_map.o; \
 	}; \
+	on_error() { \
+		status=$$?; \
+		echo "ERRO: o Lab 3 foi interrompido antes de concluir o teste da blacklist."; \
+		echo "Leia a mensagem imediatamente acima: ela indica a etapa ou comando que falhou."; \
+		echo "A topologia sera removida automaticamente. Consulte 'Solucao de problemas' no README do Lab 3."; \
+		exit $$status; \
+	}; \
 	trap cleanup EXIT INT TERM; \
+	trap on_error ERR; \
 	echo "=== LAB 3: Firewall dinamico com eBPF Maps ==="; \
 	sudo containerlab deploy -t topology.yml; \
 	H1_PID=$$(sudo docker inspect -f '{{.State.Pid}}' "$(H1_CONTAINER)"); \
@@ -72,12 +105,20 @@ run: build
 	sudo ip netns exec h2 ip link set eth1 up; \
 	sudo ip netns exec h3 ip link set eth1 up; \
 	echo "[1/4] Linha de base: h2 e h3 devem alcancar h1."; \
-	sudo ip netns exec h2 ping -c 1 -W 2 10.0.1.1 >/dev/null; \
-	sudo ip netns exec h3 ping -c 1 -W 2 10.0.2.1 >/dev/null; \
+	if ! sudo ip netns exec h2 ping -c 1 -W 2 10.0.1.1 >/dev/null; then \
+		echo "ERRO: h2 nao alcancou h1 na linha de base; verifique enlace, IPs e iputils-ping."; exit 1; \
+	fi; \
+	if ! sudo ip netns exec h3 ping -c 1 -W 2 10.0.2.1 >/dev/null; then \
+		echo "ERRO: h3 nao alcancou h1 na linha de base; verifique enlace, IPs e iputils-ping."; exit 1; \
+	fi; \
 	echo "SUCESSO: conectividade inicial confirmada."; \
 	sudo ip netns exec h1 ip link set dev eth1 xdp obj "$(CURDIR)/xdp_fw_map.o" sec xdp; \
 	MAP_ID=$$(sudo bpftool map show | awk '/name blacklist / {gsub(":", "", $$1); id=$$1} END {print id}'); \
-	test -n "$$MAP_ID" || { echo "ERRO: map blacklist nao encontrado"; exit 1; }; \
+	test -n "$$MAP_ID" || { \
+		echo "ERRO: o map 'blacklist' nao foi encontrado depois de anexar o programa XDP."; \
+		echo "Verifique o carregamento com: sudo bpftool prog list && sudo bpftool map list"; \
+		exit 1; \
+	}; \
 	echo "[2/4] Com XDP e map vazio: h2 ainda deve passar."; \
 	sudo ip netns exec h2 ping -c 1 -W 2 10.0.1.1 >/dev/null; \
 	echo "SUCESSO: map vazio nao bloqueou h2."; \

@@ -22,13 +22,36 @@ help:
 
 # Verifica ferramentas do host antes de criar containers ou alterar a rede.
 check:
-	@command -v clang >/dev/null || { echo "ERRO: clang nao encontrado"; exit 1; }
-	@command -v gcc >/dev/null || { echo "ERRO: gcc nao encontrado"; exit 1; }
-	@command -v docker >/dev/null || { echo "ERRO: docker nao encontrado"; exit 1; }
-	@command -v containerlab >/dev/null || { echo "ERRO: containerlab nao encontrado"; exit 1; }
-	@command -v ip >/dev/null || { echo "ERRO: iproute2 nao encontrado"; exit 1; }
-	@command -v tc >/dev/null || { echo "ERRO: tc nao encontrado"; exit 1; }
-	@sudo docker info >/dev/null || { echo "ERRO: Docker daemon indisponivel"; exit 1; }
+	@command -v clang >/dev/null || { \
+		echo "ERRO: Clang nao foi encontrado; sem ele XDP e TC nao podem ser compilados."; \
+		echo "Instale com: sudo apt update && sudo apt install -y clang llvm"; \
+		echo "Depois, execute novamente: make check"; exit 1; }
+	@command -v gcc >/dev/null || { \
+		echo "ERRO: GCC nao foi encontrado; ele e usado para localizar os headers da arquitetura."; \
+		echo "Instale com: sudo apt install -y build-essential"; \
+		echo "Depois, execute novamente: make check"; exit 1; }
+	@command -v docker >/dev/null || { \
+		echo "ERRO: Docker nao foi encontrado; o Containerlab depende dele para criar os hosts."; \
+		echo "Volte ao README principal e conclua a secao 'Instalar e testar o Docker'."; \
+		echo "Instalacao usada pelo curso:"; \
+		echo "  curl -fsSL https://get.docker.com -o get-docker.sh"; \
+		echo "  sudo sh get-docker.sh"; exit 1; }
+	@command -v containerlab >/dev/null || { \
+		echo "ERRO: Containerlab nao foi encontrado; a topologia h1--h2 nao pode ser criada."; \
+		echo "Volte ao README principal e conclua a secao 'Instalar e testar o Containerlab'."; \
+		echo "Instale com: bash -c \"\$$(curl -sL https://get.containerlab.dev)\""; \
+		echo "Depois, confirme com: containerlab version"; exit 1; }
+	@command -v ip >/dev/null || { \
+		echo "ERRO: o comando ip nao foi encontrado; os namespaces nao podem ser configurados."; \
+		echo "Instale com: sudo apt install -y iproute2"; exit 1; }
+	@command -v tc >/dev/null || { \
+		echo "ERRO: o comando tc nao foi encontrado; o filtro TC egress nao pode ser anexado."; \
+		echo "Instale com: sudo apt install -y iproute2"; exit 1; }
+	@sudo docker info >/dev/null 2>&1 || { \
+		echo "ERRO: Docker esta instalado, mas o daemon nao esta em execucao ou nao respondeu."; \
+		echo "Inicie com: sudo service docker start"; \
+		echo "Teste com: sudo docker info"; \
+		echo "Se continuar falhando, consulte 'Docker daemon nao esta rodando' no README principal."; exit 1; }
 	@echo "Dependencias basicas do Lab 2 encontradas."
 
 # Compila um programa XDP e um classificador TC para bytecode eBPF.
@@ -36,9 +59,13 @@ check:
 build: check
 	@echo "Compilando os programas XDP e TC..."
 	@clang -O2 -g -target bpf -D__TARGET_ARCH_x86 -I"$(ARCH_INCLUDE)" \
-		-c xdp_drop_icmp.bpf.c -o xdp.o
+		-c xdp_drop_icmp.bpf.c -o xdp.o || { \
+			echo "ERRO: falha ao compilar o programa XDP."; \
+			echo "Leia o diagnostico do Clang acima e confirme clang, libbpf-dev e os headers."; exit 1; }
 	@clang -O2 -g -target bpf -D__TARGET_ARCH_x86 -I"$(ARCH_INCLUDE)" \
-		-c tc_egress_drop.bpf.c -o tc.o
+		-c tc_egress_drop.bpf.c -o tc.o || { \
+			echo "ERRO: falha ao compilar o programa TC."; \
+			echo "Leia o diagnostico do Clang acima e confirme clang, libbpf-dev e os headers."; exit 1; }
 	@echo "Programas eBPF compilados."
 
 # Executa o experimento completo em uma unica receita para que trap consiga
@@ -50,13 +77,21 @@ build: check
 # positivos: uma falha so conta como bloqueio quando a mesma comunicacao havia
 # funcionado antes de anexar o programa eBPF.
 run: build
-	@set -euo pipefail; \
+	@set -Eeuo pipefail; \
 	cleanup() { \
 		sudo containerlab destroy -t topology.yml --cleanup >/dev/null 2>&1 || true; \
 		sudo rm -f /var/run/netns/h1 /var/run/netns/h2; \
 		rm -f xdp.o tc.o; \
 	}; \
+	on_error() { \
+		status=$$?; \
+		echo "ERRO: o Lab 2 foi interrompido antes de concluir os testes de XDP e TC."; \
+		echo "Leia a mensagem imediatamente acima: ela indica a etapa ou comando que falhou."; \
+		echo "A topologia sera removida automaticamente. Consulte 'Solucao de problemas' no README do Lab 2."; \
+		exit $$status; \
+	}; \
 	trap cleanup EXIT INT TERM; \
+	trap on_error ERR; \
 	echo "=== LAB 2: XDP ingress vs. TC egress ==="; \
 	sudo containerlab deploy -t topology.yml; \
 	H1_PID=$$(sudo docker inspect -f '{{.State.Pid}}' "$(H1_CONTAINER)"); \
@@ -69,7 +104,11 @@ run: build
 	sudo ip netns exec h1 ip link set eth1 up; \
 	sudo ip netns exec h2 ip link set eth1 up; \
 	echo "[XDP 1/2] Linha de base: ICMP deve funcionar antes do filtro."; \
-	sudo ip netns exec h2 ping -c 1 -W 2 172.20.20.1 >/dev/null; \
+	if ! sudo ip netns exec h2 ping -c 1 -W 2 172.20.20.1 >/dev/null; then \
+		echo "ERRO: h2 nao conseguiu pingar h1 antes do XDP."; \
+		echo "A linha de base falhou; verifique a topologia, os IPs e a instalacao de iputils-ping nos containers."; \
+		exit 1; \
+	fi; \
 	echo "SUCESSO: ping funcionou sem XDP."; \
 	sudo ip netns exec h1 ip link set dev eth1 xdp obj "$(CURDIR)/xdp.o" sec xdp; \
 	echo "[XDP 2/2] Com XDP: ICMP deve ser descartado no ingresso de h1."; \
@@ -82,7 +121,11 @@ run: build
 	sudo ip netns exec h1 sh -c 'nohup nc -lk -p 80 >/tmp/lab2-nc.log 2>&1 &'; \
 	sleep 1; \
 	echo "[TC 1/2] Linha de base: TCP/80 deve funcionar antes do filtro."; \
-	sudo ip netns exec h2 nc -z -w 2 172.20.20.1 80; \
+	if ! sudo ip netns exec h2 nc -z -w 2 172.20.20.1 80; then \
+		echo "ERRO: a conexao TCP/80 falhou antes do filtro TC."; \
+		echo "Verifique se netcat-openbsd foi instalado no container h1 e se o servidor nc iniciou."; \
+		exit 1; \
+	fi; \
 	echo "SUCESSO: conexao TCP/80 funcionou sem TC."; \
 	sudo ip netns exec h2 tc qdisc replace dev eth1 clsact; \
 	sudo ip netns exec h2 tc filter replace dev eth1 egress bpf da obj "$(CURDIR)/tc.o" sec classifier; \

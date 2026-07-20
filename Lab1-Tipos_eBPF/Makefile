@@ -30,10 +30,22 @@ help:
 # A ultima verificacao confirma a disponibilidade do BTF do kernel, necessario
 # para gerar o header vmlinux.h utilizado pelo programa BPF LSM.
 check:
-	@command -v clang >/dev/null || { echo "ERRO: clang nao encontrado"; exit 1; }
-	@command -v gcc >/dev/null || { echo "ERRO: gcc nao encontrado"; exit 1; }
-	@command -v bpftool >/dev/null || { echo "ERRO: bpftool nao encontrado"; exit 1; }
-	@command -v mountpoint >/dev/null || { echo "ERRO: mountpoint nao encontrado"; exit 1; }
+	@command -v clang >/dev/null || { \
+		echo "ERRO: Clang nao foi encontrado; sem ele os programas eBPF nao podem ser compilados."; \
+		echo "Instale com: sudo apt update && sudo apt install -y clang llvm"; \
+		echo "Depois, execute novamente: make check"; exit 1; }
+	@command -v gcc >/dev/null || { \
+		echo "ERRO: GCC nao foi encontrado; ele e usado para descobrir os headers da arquitetura."; \
+		echo "Instale com: sudo apt install -y build-essential"; \
+		echo "Depois, execute novamente: make check"; exit 1; }
+	@command -v bpftool >/dev/null || { \
+		echo "ERRO: bpftool nao foi encontrado; ele e necessario para gerar vmlinux.h e carregar eBPF."; \
+		echo "Instale com: sudo apt install -y bpftool"; \
+		echo "Consulte tambem a preparacao do ambiente no README principal."; exit 1; }
+	@command -v mountpoint >/dev/null || { \
+		echo "ERRO: mountpoint nao foi encontrado; nao e possivel verificar bpffs e securityfs."; \
+		echo "Instale com: sudo apt install -y util-linux"; \
+		echo "Depois, execute novamente: make check"; exit 1; }
 	@test -r /sys/kernel/btf/vmlinux || { \
 		echo "ERRO: /sys/kernel/btf/vmlinux nao esta disponivel."; \
 		echo "No PowerShell, execute 'wsl --update' e depois 'wsl --shutdown'."; \
@@ -75,10 +87,16 @@ build: check
 	@bpftool btf dump file /sys/kernel/btf/vmlinux format c > vmlinux.h
 	@clang -O2 -g -target bpf -D__TARGET_ARCH_x86 \
 		-I"$(ARCH_INCLUDE)" \
-		-c kprobe_exec.bpf.c -o kprobe_exec.bpf.o
+		-c kprobe_exec.bpf.c -o kprobe_exec.bpf.o || { \
+			echo "ERRO: falha ao compilar kprobe_exec.bpf.c."; \
+			echo "Leia o diagnostico do Clang acima e confirme os pacotes clang, libbpf-dev e headers."; \
+			exit 1; }
 	@clang -O2 -g -target bpf -D__TARGET_ARCH_x86 \
 		-I"$(CURDIR)" -I"$(ARCH_INCLUDE)" \
-		-c lsm_block.bpf.c -o lsm_block.bpf.o
+		-c lsm_block.bpf.c -o lsm_block.bpf.o || { \
+			echo "ERRO: falha ao compilar lsm_block.bpf.c."; \
+			echo "Leia o diagnostico do Clang acima e confirme se vmlinux.h foi gerado corretamente."; \
+			exit 1; }
 	@echo "Programas eBPF compilados."
 
 # Fluxo completo do experimento. As dependencias do alvo fazem com que o Make
@@ -98,12 +116,20 @@ build: check
 # curl --version funciona como teste: o retorno do programa eBPF deve negar a
 # execucao. Se BPF LSM nao estiver ativo, o Kprobe continua sendo testavel.
 run: check mounts build
-	@set -euo pipefail; \
+	@set -Eeuo pipefail; \
 	cleanup() { \
-		sudo rm -rf "$(PIN_ROOT)"; \
+		sudo rm -rf "$(PIN_ROOT)" || true; \
 		rm -f kprobe_exec.bpf.o lsm_block.bpf.o vmlinux.h; \
 	}; \
+	on_error() { \
+		status=$$?; \
+		echo "ERRO: o Lab 1 foi interrompido durante a preparacao ou o carregamento do programa eBPF."; \
+		echo "Leia a mensagem imediatamente acima para identificar a causa."; \
+		echo "O ambiente sera limpo automaticamente. Consulte 'Solucao de problemas' no README do Lab 1."; \
+		exit $$status; \
+	}; \
 	trap cleanup EXIT INT TERM; \
+	trap on_error ERR; \
 	echo "=== LAB 1: Kprobe vs. BPF LSM (WSL 2/x86-64) ==="; \
 	sudo mkdir -p "$(PIN_ROOT)/kprobe"; \
 	echo "Anexando o Kprobe a __x64_sys_execve..."; \
