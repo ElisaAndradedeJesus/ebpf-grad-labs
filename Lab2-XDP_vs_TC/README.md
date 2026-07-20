@@ -7,6 +7,12 @@ Neste laboratório, vamos comparar dois pontos de processamento de pacotes no ke
 
 O experimento utiliza XDP para descartar ICMP no ingresso de `h1` e TC para descartar TCP destinado à porta 80 na saída de `h2`.
 
+### Modo XDP utilizado no laboratório
+
+O Containerlab conecta os hosts com interfaces virtuais do tipo `veth`. Por compatibilidade com essas interfaces no WSL 2, o Makefile anexa o programa com `xdpgeneric`, isto é, no modo XDP genérico.
+
+O programa, o hook e as ações XDP continuam sendo estudados normalmente. Entretanto, este experimento demonstra o comportamento do filtro, e não o desempenho do XDP nativo executado pelo driver de uma interface física.
+
 ## Objetivos
 
 Ao final, você deverá conseguir:
@@ -184,7 +190,21 @@ Confirme o acesso à internet e tente novamente. Na primeira execução, os cont
 
 ### XDP não pode ser anexado
 
-Confira a mensagem do verifier e as capacidades do kernel:
+Se uma versão antiga do Makefile apresentar a mensagem abaixo:
+
+```text
+Error: veth: Peer MTU is too large to set XDP.
+```
+
+ela tentou usar XDP nativo em uma interface `veth`. Atualize o repositório e repita o teste; o Makefile atual utiliza XDP genérico:
+
+```bash
+git pull
+make clean
+make run
+```
+
+Se a anexção genérica também falhar, confira a mensagem exibida imediatamente antes do `Error 2` e verifique as capacidades do kernel:
 
 ```bash
 sudo bpftool feature probe kernel

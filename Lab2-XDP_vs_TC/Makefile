@@ -110,7 +110,13 @@ run: build
 		exit 1; \
 	fi; \
 	echo "SUCESSO: ping funcionou sem XDP."; \
-	sudo ip netns exec h1 ip link set dev eth1 xdp obj "$(CURDIR)/xdp.o" sec xdp; \
+	echo "Anexando XDP em modo generico, compativel com a interface veth do Containerlab."; \
+	if ! sudo ip netns exec h1 ip link set dev eth1 xdpgeneric obj "$(CURDIR)/xdp.o" sec xdp; then \
+		echo "ERRO: nao foi possivel anexar o programa XDP generico a eth1 de h1."; \
+		echo "O modo generico e usado porque pares veth no WSL podem rejeitar XDP nativo por causa do MTU do peer."; \
+		echo "Verifique o suporte do kernel com: sudo bpftool feature probe kernel"; \
+		exit 1; \
+	fi; \
 	echo "[XDP 2/2] Com XDP: ICMP deve ser descartado no ingresso de h1."; \
 	if sudo ip netns exec h2 ping -c 1 -W 2 172.20.20.1 >/dev/null 2>&1; then \
 		echo "FALHA: ping passou mesmo com XDP."; \

@@ -2,6 +2,8 @@
 
 Neste laboratório, um programa XDP consulta uma Hash Map para decidir se o endereço IPv4 de origem deve ser bloqueado. A política pode ser alterada com `bpftool` sem recompilar ou recarregar o programa eBPF.
 
+Como o Containerlab cria interfaces virtuais `veth`, o Makefile anexa o programa com `xdpgeneric` para manter a compatibilidade com o WSL 2. Isso preserva o comportamento do programa e do map que serão estudados, mas o laboratório não representa uma medição de desempenho do XDP nativo em hardware.
+
 ## Objetivos
 
 Ao final, você deverá conseguir:
@@ -207,6 +209,16 @@ make check
 ### Uma topologia anterior ainda está ativa
 
 ```bash
+make clean
+make run
+```
+
+### `Peer MTU is too large to set XDP`
+
+Essa mensagem indica que uma versão antiga do laboratório tentou anexar XDP nativo à interface `veth`. O Makefile atual utiliza XDP genérico. Atualize e execute novamente:
+
+```bash
+git pull
 make clean
 make run
 ```

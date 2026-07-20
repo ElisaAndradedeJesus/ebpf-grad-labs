@@ -112,7 +112,13 @@ run: build
 		echo "ERRO: h3 nao alcancou h1 na linha de base; verifique enlace, IPs e iputils-ping."; exit 1; \
 	fi; \
 	echo "SUCESSO: conectividade inicial confirmada."; \
-	sudo ip netns exec h1 ip link set dev eth1 xdp obj "$(CURDIR)/xdp_fw_map.o" sec xdp; \
+	echo "Anexando XDP em modo generico, compativel com a interface veth do Containerlab."; \
+	if ! sudo ip netns exec h1 ip link set dev eth1 xdpgeneric obj "$(CURDIR)/xdp_fw_map.o" sec xdp; then \
+		echo "ERRO: nao foi possivel anexar o firewall XDP generico a eth1 de h1."; \
+		echo "O modo generico e usado porque pares veth no WSL podem rejeitar XDP nativo por causa do MTU do peer."; \
+		echo "Verifique o suporte do kernel com: sudo bpftool feature probe kernel"; \
+		exit 1; \
+	fi; \
 	MAP_ID=$$(sudo bpftool map show | awk '/name blacklist / {gsub(":", "", $$1); id=$$1} END {print id}'); \
 	test -n "$$MAP_ID" || { \
 		echo "ERRO: o map 'blacklist' nao foi encontrado depois de anexar o programa XDP."; \
