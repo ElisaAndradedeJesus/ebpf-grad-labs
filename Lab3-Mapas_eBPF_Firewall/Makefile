@@ -1,4 +1,4 @@
-# Usa Bash porque o alvo run utiliza funcoes, trap e pipefail.
+# Usa Bash porque os alvos setup e test utilizam funcoes, trap e pipefail.
 SHELL := /bin/bash
 
 # Headers especificos da arquitetura, necessarios durante a compilacao eBPF.
@@ -10,13 +10,14 @@ H1_CONTAINER := clab-$(LAB_NAME)-h1
 H2_CONTAINER := clab-$(LAB_NAME)-h2
 H3_CONTAINER := clab-$(LAB_NAME)-h3
 
-.PHONY: help check build run destroy clean
+.PHONY: help check build setup test destroy clean
 
 help:
 	@echo "Lab 3 - Firewall dinamico com eBPF Maps"
 	@echo "  make check    verifica as dependencias"
 	@echo "  make build    compila o programa XDP"
-	@echo "  make run      executa e testa o laboratorio"
+	@echo "  make setup    compila e monta a topologia"
+	@echo "  make test     executa os testes na topologia pronta"
 	@echo "  make destroy  destroi uma topologia remanescente"
 	@echo "  make clean    destroi a topologia e remove objetos"
 
@@ -71,23 +72,24 @@ build: check
 # a chave IPv4 10.0.1.2 como bytes de rede (0a 00 01 02) e o valor inteiro 1 em
 # little-endian (01 00 00 00). O teste final remove a chave sem recompilar o
 # programa e confirma que a conectividade de h2 volta imediatamente.
-run: build
+# Prepara a topologia e os namespaces, mas nao anexa XDP nem altera o map.
+setup: build
 	@set -Eeuo pipefail; \
 	cleanup() { \
 		sudo containerlab destroy -t topology.yml --cleanup >/dev/null 2>&1 || true; \
 		sudo rm -f /var/run/netns/h1 /var/run/netns/h2 /var/run/netns/h3; \
-		rm -f xdp_fw_map.o; \
 	}; \
 	on_error() { \
 		status=$$?; \
-		echo "ERRO: o Lab 3 foi interrompido antes de concluir o teste da blacklist."; \
+		echo "ERRO: nao foi possivel preparar a topologia do Lab 3."; \
 		echo "Leia a mensagem imediatamente acima: ela indica a etapa ou comando que falhou."; \
-		echo "A topologia sera removida automaticamente. Consulte 'Solucao de problemas' no README do Lab 3."; \
+		echo "A preparacao incompleta sera removida automaticamente."; \
+		cleanup; \
 		exit $$status; \
 	}; \
-	trap cleanup EXIT INT TERM; \
+	trap cleanup INT TERM; \
 	trap on_error ERR; \
-	echo "=== LAB 3: Firewall dinamico com eBPF Maps ==="; \
+	sudo containerlab destroy -t topology.yml --cleanup >/dev/null 2>&1 || true; \
 	sudo containerlab deploy -t topology.yml; \
 	H1_PID=$$(sudo docker inspect -f '{{.State.Pid}}' "$(H1_CONTAINER)"); \
 	H2_PID=$$(sudo docker inspect -f '{{.State.Pid}}' "$(H2_CONTAINER)"); \
@@ -104,6 +106,25 @@ run: build
 	sudo ip netns exec h1 ip link set eth2 up; \
 	sudo ip netns exec h2 ip link set eth1 up; \
 	sudo ip netns exec h3 ip link set eth1 up; \
+	echo "Ambiente do Lab 3 preparado."; \
+	echo "Execute os testes com: make test"
+
+# Executa o experimento na topologia pronta e a mantem ativa para inspecao.
+test:
+	@test -f xdp_fw_map.o -a -e /var/run/netns/h1 -a -e /var/run/netns/h2 -a -e /var/run/netns/h3 || { \
+		echo "ERRO: o ambiente do Lab 3 nao esta preparado."; \
+		echo "Execute primeiro: make setup"; exit 1; }
+	@set -Eeuo pipefail; \
+	on_error() { \
+		status=$$?; \
+		echo "ERRO: o Lab 3 foi interrompido antes de concluir o teste da blacklist."; \
+		echo "Leia a mensagem imediatamente acima: ela indica a etapa que falhou."; \
+		echo "A topologia foi mantida para inspecao. Remova-a com: make clean"; \
+		exit $$status; \
+	}; \
+	trap on_error ERR; \
+	echo "=== LAB 3: Firewall dinamico com eBPF Maps ==="; \
+	sudo ip netns exec h1 ip link set dev eth1 xdp off >/dev/null 2>&1 || true; \
 	echo "[1/4] Linha de base: h2 e h3 devem alcancar h1."; \
 	if ! sudo ip netns exec h2 ping -c 1 -W 2 10.0.1.1 >/dev/null; then \
 		echo "ERRO: h2 nao alcancou h1 na linha de base; verifique enlace, IPs e iputils-ping."; exit 1; \
@@ -142,8 +163,8 @@ run: build
 	sudo bpftool map delete id "$$MAP_ID" key hex 0a 00 01 02; \
 	sudo ip netns exec h2 ping -c 1 -W 2 10.0.1.1 >/dev/null; \
 	echo "SUCESSO: h2 voltou a passar sem recompilar o programa."; \
-	echo "Pressione Enter para destruir a topologia e encerrar."; \
-	read -r
+	echo "Todos os testes do Lab 3 foram concluidos."; \
+	echo "A topologia continua ativa para inspecao. Ao terminar, execute: make clean"
 
 # Recupera o ambiente se uma execucao anterior tiver sido interrompida.
 destroy:

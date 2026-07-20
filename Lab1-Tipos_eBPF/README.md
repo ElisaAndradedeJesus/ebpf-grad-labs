@@ -51,7 +51,13 @@ Confira os arquivos:
 ls
 ```
 
-### 2. Verifique as dependências
+### 2. Conheça os comandos disponíveis
+
+```bash
+make help
+```
+
+### 3. Verifique as dependências
 
 Execute:
 
@@ -59,23 +65,29 @@ Execute:
 make check
 ```
 
-### 3. Execute o laboratório
+### 4. Prepare o laboratório
 
 O Makefile solicitará `sudo` apenas nas operações que exigem privilégios administrativos:
 
 ```bash
-make run
+make setup
 ```
 
-O comando deve:
+Esse comando verifica BTF, prepara os filesystems, gera `vmlinux.h` e compila os dois programas sem carregá-los no kernel.
 
-1. verificar a disponibilidade de BTF;
-2. preparar `/sys/fs/bpf`;
-3. gerar `vmlinux.h`;
-4. compilar os dois programas eBPF;
-5. carregar e anexar o Kprobe;
-6. verificar se BPF LSM está ativo;
-7. aguardar antes de remover os programas.
+### 5. Execute o teste
+
+Depois que a preparação terminar, carregue e teste os programas:
+
+```bash
+make test
+```
+
+O teste deve:
+
+1. carregar e anexar o Kprobe;
+2. verificar se BPF LSM está ativo;
+3. aguardar antes de remover os programas.
 
 Quando aparecer a mensagem abaixo, a preparação terminou e o Kprobe está carregado no kernel:
 
@@ -85,13 +97,13 @@ Pressione Enter para encerrar e remover os programas eBPF.
 
 **Não pressione Enter ainda.** Esse será o **Terminal 1**, responsável por manter o laboratório ativo enquanto o teste é realizado.
 
-### 4. Entenda o teste com três terminais
+### 6. Entenda o teste com três terminais
 
 O teste utiliza três terminais Ubuntu ao mesmo tempo. Cada um possui uma responsabilidade diferente:
 
 | Terminal | Responsabilidade | Comando principal |
 |---|---|---|
-| Terminal 1 | Preparar e manter o Kprobe carregado | `make run` |
+| Terminal 1 | Carregar e manter o Kprobe ativo | `make test` |
 | Terminal 2 | Exibir os eventos produzidos pelo Kprobe | `sudo cat /sys/kernel/tracing/trace_pipe` |
 | Terminal 3 | Executar programas para gerar eventos | `ls`, `date` e `whoami` |
 
@@ -109,7 +121,7 @@ O programa eBPF escreve uma mensagem de tracing
 O Terminal 2 exibe a mensagem pelo trace_pipe
 ```
 
-### 5. Terminal 2: observe os eventos do Kprobe
+### 7. Terminal 2: observe os eventos do Kprobe
 
 Abra um segundo terminal Ubuntu e execute:
 
@@ -125,7 +137,7 @@ sudo cat /sys/kernel/debug/tracing/trace_pipe
 
 Deixe esse comando em execução. O terminal ficará aparentemente parado enquanto aguarda novas mensagens do kernel. Isso é o comportamento esperado.
 
-### 6. Terminal 3: gere eventos de execução
+### 8. Terminal 3: gere eventos de execução
 
 Abra um terceiro terminal Ubuntu e execute, um de cada vez:
 
@@ -147,7 +159,7 @@ KPROBE: Processo 'whoami' executado!
 
 O nome e a ordem dos processos podem variar porque o sistema continua executando outros programas enquanto o Kprobe está ativo.
 
-### 7. Confirme o programa com bpftool
+### 9. Confirme o programa com bpftool
 
 Ainda no Terminal 3, confirme que o programa está carregado no kernel:
 
@@ -162,7 +174,7 @@ O teste do Kprobe é considerado bem-sucedido quando existem as duas evidências
 1. `bpftool` mostra o programa `trace_exec` carregado;
 2. o Terminal 2 mostra mensagens geradas quando os comandos do Terminal 3 são executados.
 
-### 8. Interprete o teste do BPF LSM
+### 10. Interprete o teste do BPF LSM
 
 O Makefile consulta `/sys/kernel/security/lsm` antes de carregar o programa de segurança.
 
@@ -180,7 +192,7 @@ AVISO: BPF LSM não está ativo neste kernel; o teste de bloqueio será ignorado
 
 Esse aviso não significa que a compilação falhou. Ele indica que o kernel foi iniciado sem o BPF LSM na lista de módulos de segurança ativos.
 
-### 9. Encerre e limpe o laboratório
+### 11. Encerre e limpe o laboratório
 
 Siga esta ordem para encerrar:
 
@@ -205,12 +217,13 @@ sudo test ! -e /sys/fs/bpf/ebpf_lab1 && echo "Lab 1 removido com sucesso"
 
 ## Solução de problemas
 
-### `Permission denied` durante `make run`
+### `Permission denied` durante `make setup` ou `make test`
 
 Execute novamente e informe a senha do usuário Ubuntu quando `sudo` solicitar:
 
 ```bash
-make run
+make setup
+make test
 ```
 
 ### `/sys/kernel/btf/vmlinux não está disponível`
@@ -246,7 +259,8 @@ sudo mount -t bpf bpf /sys/fs/bpf
 Depois, execute novamente:
 
 ```bash
-make run
+make setup
+make test
 ```
 
 ### O Kprobe não consegue encontrar `__x64_sys_execve`

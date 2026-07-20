@@ -1,4 +1,4 @@
-# Usa Bash para executar as receitas. O alvo run utiliza recursos como funcoes,
+# Usa Bash para executar as receitas. O alvo test utiliza recursos como funcoes,
 # trap e pipefail, que nao fazem parte de todos os shells POSIX.
 SHELL := /bin/bash
 
@@ -13,8 +13,8 @@ PIN_ROOT := /sys/fs/bpf/ebpf_lab1
 
 # Estes nomes representam acoes, e nao arquivos que devem ser gerados.
 # A declaracao PHONY garante que os alvos sejam executados mesmo se existir um
-# arquivo chamado help, check, mounts, build, run ou clean no diretorio.
-.PHONY: help check mounts build run clean
+# arquivo chamado help, check, mounts, build, setup, test ou clean no diretorio.
+.PHONY: help check mounts build setup test clean
 
 # Exibe os comandos disponiveis sem preparar ou modificar o ambiente.
 help:
@@ -22,7 +22,8 @@ help:
 	@echo "  make check   verifica as dependencias do laboratorio"
 	@echo "  make mounts  prepara bpffs e securityfs"
 	@echo "  make build   gera vmlinux.h e compila os programas"
-	@echo "  make run     prepara, compila e executa o laboratorio"
+	@echo "  make setup   prepara filesystems e compila os programas"
+	@echo "  make test    carrega e testa os programas ja preparados"
 	@echo "  make clean   remove programas e arquivos gerados"
 
 # Verifica primeiro as ferramentas usadas na compilacao e na inspecao eBPF.
@@ -99,8 +100,11 @@ build: check
 			exit 1; }
 	@echo "Programas eBPF compilados."
 
-# Fluxo completo do experimento. As dependencias do alvo fazem com que o Make
-# execute check, mounts e build antes desta receita.
+# Prepara todos os recursos necessarios sem carregar os programas no kernel.
+setup: check mounts build
+	@echo "Ambiente do Lab 1 preparado. Execute: make test"
+
+# Executa o experimento sobre os objetos produzidos anteriormente por setup.
 #
 # set -euo pipefail interrompe a execucao ao encontrar erros, variaveis nao
 # definidas ou falhas escondidas em pipelines. A funcao cleanup remove os pins e
@@ -115,7 +119,10 @@ build: check
 # carregado quando "bpf" aparece entre os LSMs ativos. Se estiver disponivel,
 # curl --version funciona como teste: o retorno do programa eBPF deve negar a
 # execucao. Se BPF LSM nao estiver ativo, o Kprobe continua sendo testavel.
-run: check mounts build
+test:
+	@test -f kprobe_exec.bpf.o -a -f lsm_block.bpf.o || { \
+		echo "ERRO: os programas do Lab 1 ainda nao foram preparados."; \
+		echo "Execute primeiro: make setup"; exit 1; }
 	@set -Eeuo pipefail; \
 	cleanup() { \
 		sudo rm -rf "$(PIN_ROOT)" || true; \
@@ -123,7 +130,7 @@ run: check mounts build
 	}; \
 	on_error() { \
 		status=$$?; \
-		echo "ERRO: o Lab 1 foi interrompido durante a preparacao ou o carregamento do programa eBPF."; \
+		echo "ERRO: o teste do Lab 1 foi interrompido durante o carregamento do programa eBPF."; \
 		echo "Leia a mensagem imediatamente acima para identificar a causa."; \
 		echo "O ambiente sera limpo automaticamente. Consulte 'Solucao de problemas' no README do Lab 1."; \
 		exit $$status; \

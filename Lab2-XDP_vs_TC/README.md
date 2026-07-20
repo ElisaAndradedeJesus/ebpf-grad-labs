@@ -28,11 +28,13 @@ Ao final, você deverá conseguir:
 O Containerlab cria dois hosts Linux conectados diretamente:
 
 ```text
-h1 (172.20.20.1/24) eth1 ─── eth1 h2 (172.20.20.2/24)
+h1 (10.10.12.1/24) eth1 ─── eth1 h2 (10.10.12.2/24)
 ```
 
 - `h1` recebe o programa XDP em `eth1` e executa um servidor TCP na porta 80;
 - `h2` gera ping e conexões TCP e recebe o filtro TC egress em `eth1`.
+
+A rede experimental `10.10.12.0/24` é diferente da rede administrativa do Containerlab. Essa separação garante que os pacotes de teste atravessem `eth1`, em vez de seguirem pela interface administrativa `eth0` e desviarem dos programas eBPF.
 
 ## Arquivos
 
@@ -74,13 +76,21 @@ make check
 
 Essa etapa confirma Clang, Docker, Containerlab, `ip`, `tc` e o Docker daemon.
 
-### 4. Execute o experimento
+### 4. Prepare o ambiente
 
 ```bash
-make run
+make setup
 ```
 
-O Makefile compila os programas, cria a topologia, configura os endereços e executa quatro testes.
+O Makefile compila os programas, cria os dois containers e configura a rede experimental. Nenhum filtro é anexado e nenhum teste é executado nessa etapa.
+
+### 5. Execute os testes
+
+```bash
+make test
+```
+
+Esse comando executa as linhas de base, anexa XDP e TC e verifica os dois bloqueios. A topologia permanece ativa ao final para que você possa inspecioná-la.
 
 ## Como interpretar os testes
 
@@ -154,9 +164,7 @@ O teste é bem-sucedido quando:
 
 ## Encerrar e limpar
 
-Volte ao terminal de `make run` e pressione Enter. O Makefile destrói a topologia, remove os namespaces auxiliares e apaga `xdp.o` e `tc.o`.
-
-Se uma execução for interrompida, execute:
+Quando terminar os testes e a inspeção, destrua a topologia, remova os namespaces auxiliares e apague `xdp.o` e `tc.o`:
 
 ```bash
 make clean
@@ -181,7 +189,8 @@ make check
 
 ```bash
 make clean
-make run
+make setup
+make test
 ```
 
 ### Falha durante a instalação de pacotes nos containers
@@ -201,7 +210,8 @@ ela tentou usar XDP nativo em uma interface `veth`. Atualize o repositório e re
 ```bash
 git pull
 make clean
-make run
+make setup
+make test
 ```
 
 Se a anexção genérica também falhar, confira a mensagem exibida imediatamente antes do `Error 2` e verifique as capacidades do kernel:

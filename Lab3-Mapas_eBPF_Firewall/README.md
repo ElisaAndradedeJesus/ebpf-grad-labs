@@ -76,13 +76,21 @@ make help
 make check
 ```
 
-### 4. Execute o experimento
+### 4. Prepare o ambiente
 
 ```bash
-make run
+make setup
 ```
 
-O Makefile compila o programa, cria a topologia, configura os endereços e executa quatro estados do firewall.
+O Makefile compila o programa, cria os três containers e configura os endereços. Nenhum programa XDP é anexado nessa etapa.
+
+### 5. Execute os testes
+
+```bash
+make test
+```
+
+Esse comando anexa o programa XDP e percorre os quatro estados do firewall. A topologia permanece ativa ao final para inspeção.
 
 ## Como interpretar os testes
 
@@ -183,9 +191,7 @@ O laboratório é considerado bem-sucedido quando:
 
 ## Encerrar e limpar
 
-Volte ao terminal de `make run` e pressione Enter. O Makefile destrói a topologia, remove os namespaces auxiliares e apaga `xdp_fw_map.o`.
-
-Se a execução for interrompida:
+Quando terminar os testes e a inspeção, destrua a topologia, remova os namespaces auxiliares e apague `xdp_fw_map.o`:
 
 ```bash
 make clean
@@ -210,7 +216,8 @@ make check
 
 ```bash
 make clean
-make run
+make setup
+make test
 ```
 
 ### `Peer MTU is too large to set XDP`
@@ -220,7 +227,8 @@ Essa mensagem indica que uma versão antiga do laboratório tentou anexar XDP na
 ```bash
 git pull
 make clean
-make run
+make setup
+make test
 ```
 
 ### `map blacklist nao encontrado`
@@ -236,5 +244,6 @@ Depois limpe o ambiente e repita:
 
 ```bash
 make clean
-make run
+make setup
+make test
 ```

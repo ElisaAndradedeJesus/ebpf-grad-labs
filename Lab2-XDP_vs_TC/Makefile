@@ -1,4 +1,4 @@
-# Usa Bash porque o alvo run utiliza funcoes, trap e pipefail.
+# Usa Bash porque os alvos setup e test utilizam funcoes, trap e pipefail.
 SHELL := /bin/bash
 
 # Headers especificos da arquitetura, necessarios para asm/types.h.
@@ -9,14 +9,22 @@ LAB_NAME := ebpf-lab2
 H1_CONTAINER := clab-$(LAB_NAME)-h1
 H2_CONTAINER := clab-$(LAB_NAME)-h2
 
-.PHONY: help check build run destroy clean
+# Rede exclusiva do enlace experimental h1--h2. Ela deve ser diferente da
+# rede administrativa criada pelo Containerlab (normalmente 172.20.20.0/24),
+# para que os testes atravessem eth1 e alcancem os hooks XDP e TC.
+H1_LAB_IP := 10.10.12.1
+H2_LAB_IP := 10.10.12.2
+LAB_PREFIX := 24
+
+.PHONY: help check build setup test destroy clean
 
 # Mostra a interface publica do laboratorio.
 help:
 	@echo "Lab 2 - XDP vs. TC"
 	@echo "  make check    verifica as dependencias"
 	@echo "  make build    compila os programas eBPF"
-	@echo "  make run      executa e testa o laboratorio"
+	@echo "  make setup    compila e monta a topologia"
+	@echo "  make test     executa os testes na topologia pronta"
 	@echo "  make destroy  destroi uma topologia remanescente"
 	@echo "  make clean    destroi a topologia e remove objetos"
 
@@ -68,43 +76,59 @@ build: check
 			echo "Leia o diagnostico do Clang acima e confirme clang, libbpf-dev e os headers."; exit 1; }
 	@echo "Programas eBPF compilados."
 
-# Executa o experimento completo em uma unica receita para que trap consiga
-# destruir a topologia mesmo quando um teste falhar ou o usuario pressionar
-# Ctrl+C. Os PIDs dos containers sao ligados a /var/run/netns; assim, ip e tc
-# podem operar diretamente nos namespaces criados pelo Containerlab.
-#
-# O teste sempre mede uma linha de base antes do filtro. Isso evita falsos
-# positivos: uma falha so conta como bloqueio quando a mesma comunicacao havia
-# funcionado antes de anexar o programa eBPF.
-run: build
+# Monta a topologia e configura apenas o ambiente. Nenhum teste e executado e
+# nenhum programa eBPF e anexado nesta etapa.
+setup: build
 	@set -Eeuo pipefail; \
 	cleanup() { \
 		sudo containerlab destroy -t topology.yml --cleanup >/dev/null 2>&1 || true; \
 		sudo rm -f /var/run/netns/h1 /var/run/netns/h2; \
-		rm -f xdp.o tc.o; \
 	}; \
 	on_error() { \
 		status=$$?; \
-		echo "ERRO: o Lab 2 foi interrompido antes de concluir os testes de XDP e TC."; \
+		echo "ERRO: nao foi possivel preparar a topologia do Lab 2."; \
 		echo "Leia a mensagem imediatamente acima: ela indica a etapa ou comando que falhou."; \
-		echo "A topologia sera removida automaticamente. Consulte 'Solucao de problemas' no README do Lab 2."; \
+		echo "A preparacao incompleta sera removida automaticamente."; \
+		cleanup; \
 		exit $$status; \
 	}; \
-	trap cleanup EXIT INT TERM; \
+	trap cleanup INT TERM; \
 	trap on_error ERR; \
-	echo "=== LAB 2: XDP ingress vs. TC egress ==="; \
+	sudo containerlab destroy -t topology.yml --cleanup >/dev/null 2>&1 || true; \
 	sudo containerlab deploy -t topology.yml; \
 	H1_PID=$$(sudo docker inspect -f '{{.State.Pid}}' "$(H1_CONTAINER)"); \
 	H2_PID=$$(sudo docker inspect -f '{{.State.Pid}}' "$(H2_CONTAINER)"); \
 	sudo mkdir -p /var/run/netns; \
 	sudo ln -sf "/proc/$$H1_PID/ns/net" /var/run/netns/h1; \
 	sudo ln -sf "/proc/$$H2_PID/ns/net" /var/run/netns/h2; \
-	sudo ip netns exec h1 ip addr replace 172.20.20.1/24 dev eth1; \
-	sudo ip netns exec h2 ip addr replace 172.20.20.2/24 dev eth1; \
+	sudo ip netns exec h1 ip addr replace "$(H1_LAB_IP)/$(LAB_PREFIX)" dev eth1; \
+	sudo ip netns exec h2 ip addr replace "$(H2_LAB_IP)/$(LAB_PREFIX)" dev eth1; \
 	sudo ip netns exec h1 ip link set eth1 up; \
 	sudo ip netns exec h2 ip link set eth1 up; \
+	echo "Ambiente do Lab 2 preparado."; \
+	echo "Topologia ativa: h1 ($(H1_LAB_IP)) <-> h2 ($(H2_LAB_IP))"; \
+	echo "Execute os testes com: make test"
+
+# Executa somente os testes. A linha de base e medida antes de cada filtro para
+# evitar falsos positivos. A topologia permanece ativa ao final para inspecao.
+test:
+	@test -f xdp.o -a -f tc.o -a -e /var/run/netns/h1 -a -e /var/run/netns/h2 || { \
+		echo "ERRO: o ambiente do Lab 2 nao esta preparado."; \
+		echo "Execute primeiro: make setup"; exit 1; }
+	@set -Eeuo pipefail; \
+	on_error() { \
+		status=$$?; \
+		echo "ERRO: o Lab 2 foi interrompido antes de concluir os testes de XDP e TC."; \
+		echo "Leia a mensagem imediatamente acima: ela indica a etapa que falhou."; \
+		echo "A topologia foi mantida para inspecao. Remova-a com: make clean"; \
+		exit $$status; \
+	}; \
+	trap on_error ERR; \
+	echo "=== LAB 2: XDP ingress vs. TC egress ==="; \
+	sudo ip netns exec h1 ip link set dev eth1 xdp off >/dev/null 2>&1 || true; \
+	sudo ip netns exec h2 tc qdisc del dev eth1 clsact >/dev/null 2>&1 || true; \
 	echo "[XDP 1/2] Linha de base: ICMP deve funcionar antes do filtro."; \
-	if ! sudo ip netns exec h2 ping -c 1 -W 2 172.20.20.1 >/dev/null; then \
+	if ! sudo ip netns exec h2 ping -c 1 -W 2 "$(H1_LAB_IP)" >/dev/null; then \
 		echo "ERRO: h2 nao conseguiu pingar h1 antes do XDP."; \
 		echo "A linha de base falhou; verifique a topologia, os IPs e a instalacao de iputils-ping nos containers."; \
 		exit 1; \
@@ -118,7 +142,7 @@ run: build
 		exit 1; \
 	fi; \
 	echo "[XDP 2/2] Com XDP: ICMP deve ser descartado no ingresso de h1."; \
-	if sudo ip netns exec h2 ping -c 1 -W 2 172.20.20.1 >/dev/null 2>&1; then \
+	if sudo ip netns exec h2 ping -c 1 -W 2 "$(H1_LAB_IP)" >/dev/null 2>&1; then \
 		echo "FALHA: ping passou mesmo com XDP."; \
 		exit 1; \
 	else \
@@ -127,7 +151,7 @@ run: build
 	sudo ip netns exec h1 sh -c 'nohup nc -lk -p 80 >/tmp/lab2-nc.log 2>&1 &'; \
 	sleep 1; \
 	echo "[TC 1/2] Linha de base: TCP/80 deve funcionar antes do filtro."; \
-	if ! sudo ip netns exec h2 nc -z -w 2 172.20.20.1 80; then \
+	if ! sudo ip netns exec h2 nc -z -w 2 "$(H1_LAB_IP)" 80; then \
 		echo "ERRO: a conexao TCP/80 falhou antes do filtro TC."; \
 		echo "Verifique se netcat-openbsd foi instalado no container h1 e se o servidor nc iniciou."; \
 		exit 1; \
@@ -136,14 +160,14 @@ run: build
 	sudo ip netns exec h2 tc qdisc replace dev eth1 clsact; \
 	sudo ip netns exec h2 tc filter replace dev eth1 egress bpf da obj "$(CURDIR)/tc.o" sec classifier; \
 	echo "[TC 2/2] Com TC: TCP/80 deve ser descartado na saida de h2."; \
-	if sudo ip netns exec h2 nc -z -w 2 172.20.20.1 80; then \
+	if sudo ip netns exec h2 nc -z -w 2 "$(H1_LAB_IP)" 80; then \
 		echo "FALHA: conexao TCP/80 passou mesmo com TC."; \
 		exit 1; \
 	else \
 		echo "SUCESSO: TC bloqueou TCP/80 no egress de h2."; \
 	fi; \
-	echo "Pressione Enter para destruir a topologia e encerrar."; \
-	read -r
+	echo "Todos os testes do Lab 2 foram concluidos."; \
+	echo "A topologia continua ativa para inspecao. Ao terminar, execute: make clean"
 
 # Recupera o ambiente caso uma execucao anterior tenha sido interrompida.
 destroy:
