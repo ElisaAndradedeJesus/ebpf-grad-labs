@@ -111,9 +111,14 @@ setup: build
 
 # Executa o experimento na topologia pronta e a mantem ativa para inspecao.
 test:
-	@test -f xdp_fw_map.o -a -e /var/run/netns/h1 -a -e /var/run/netns/h2 -a -e /var/run/netns/h3 || { \
-		echo "ERRO: o ambiente do Lab 3 nao esta preparado."; \
+	@test -f xdp_fw_map.o || { \
+		echo "ERRO: o programa eBPF do Lab 3 nao foi compilado."; \
 		echo "Execute primeiro: make setup"; exit 1; }
+	@sudo ip netns exec h1 true >/dev/null 2>&1 && \
+	 sudo ip netns exec h2 true >/dev/null 2>&1 && \
+	 sudo ip netns exec h3 true >/dev/null 2>&1 || { \
+		echo "ERRO: os namespaces h1, h2 e h3 nao estao acessiveis."; \
+		echo "A topologia pode ter sido encerrada. Execute novamente: make setup"; exit 1; }
 	@set -Eeuo pipefail; \
 	on_error() { \
 		status=$$?; \

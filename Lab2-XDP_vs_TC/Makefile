@@ -112,9 +112,13 @@ setup: build
 # Executa somente os testes. A linha de base e medida antes de cada filtro para
 # evitar falsos positivos. A topologia permanece ativa ao final para inspecao.
 test:
-	@test -f xdp.o -a -f tc.o -a -e /var/run/netns/h1 -a -e /var/run/netns/h2 || { \
-		echo "ERRO: o ambiente do Lab 2 nao esta preparado."; \
+	@test -f xdp.o -a -f tc.o || { \
+		echo "ERRO: os programas eBPF do Lab 2 nao foram compilados."; \
 		echo "Execute primeiro: make setup"; exit 1; }
+	@sudo ip netns exec h1 true >/dev/null 2>&1 && \
+	 sudo ip netns exec h2 true >/dev/null 2>&1 || { \
+		echo "ERRO: os namespaces h1 e h2 nao estao acessiveis."; \
+		echo "A topologia pode ter sido encerrada. Execute novamente: make setup"; exit 1; }
 	@set -Eeuo pipefail; \
 	on_error() { \
 		status=$$?; \
