@@ -84,17 +84,30 @@ make setup
 
 O Makefile compila o programa, cria os três containers e configura os endereços. Nenhum programa XDP é anexado nessa etapa.
 
-### 5. Execute os testes
+### 5. Execute uma etapa por vez
+
+```bash
+make test-step1
+make test-step2
+make test-step3
+make test-step4
+```
+
+Cada etapa apresenta primeiro as saídas técnicas completas de `ping`, `ip` e `bpftool`. Somente depois aparece uma tela didática completa que traduz o que aconteceu. Para executar as quatro etapas automaticamente, use:
 
 ```bash
 make test
 ```
 
-Esse comando anexa o programa XDP e percorre os quatro estados do firewall. A topologia permanece ativa ao final para inspeção.
+A topologia permanece ativa ao final para inspeção.
 
 ## Como interpretar os testes
 
 ### 1/4: conectividade inicial
+
+```bash
+make test-step1
+```
 
 Antes de carregar XDP, `h2` e `h3` precisam alcançar `h1`.
 
@@ -108,6 +121,10 @@ Essa linha de base garante que uma falha posterior de `h2` foi causada pela blac
 
 ### 2/4: XDP com map vazio
 
+```bash
+make test-step2
+```
+
 O programa XDP é anexado, mas a blacklist ainda não possui chaves. `h2` deve continuar passando.
 
 Resultado esperado:
@@ -117,6 +134,10 @@ SUCESSO: map vazio nao bloqueou h2.
 ```
 
 ### 3/4: inserção na blacklist
+
+```bash
+make test-step3
+```
 
 O Makefile localiza o map `blacklist` e utiliza `bpftool map update` para inserir `10.0.1.2` com valor `1`.
 
@@ -133,6 +154,10 @@ SUCESSO: h3 permaneceu permitido.
 ```
 
 ### 4/4: remoção da blacklist
+
+```bash
+make test-step4
+```
 
 O Makefile remove a chave com `bpftool map delete`. Sem recompilar o programa, `h2` volta a alcançar `h1`.
 

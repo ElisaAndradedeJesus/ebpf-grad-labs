@@ -83,6 +83,8 @@ Depois que a preparação terminar, carregue e teste os programas:
 make test
 ```
 
+O terminal mostra primeiro as saídas técnicas completas do `bpftool`, a lista de LSMs ativos e, quando disponível, a tentativa de executar `curl` sob o BPF LSM. Somente depois dessas evidências aparece um quadro didático separado com objetivo, preparação, ação, interpretação e conclusão.
+
 O teste deve:
 
 1. carregar e anexar o Kprobe;

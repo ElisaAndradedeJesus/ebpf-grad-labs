@@ -129,12 +129,42 @@ Antes de anexar XDP, `h2` envia ICMP para `h1`:
 h2 ── ping ──> h1
 ```
 
-O Makefile inicia `tcpdump` na `eth1` de `h1` e mostra a saída completa de dois pings. Devem aparecer requisições e respostas ICMP, seguidas de `0% packet loss`.
+O Makefile inicia `tcpdump` na `eth1` de `h1` e envia dois pings. Primeiro, as saídas técnicas originais de `tcpdump` e `ping` aparecem normalmente. Quando os dois comandos terminam, uma tela separada traduz o resultado e apresenta quantos pedidos e respostas foram observados.
+
+Essa ordem é intencional: alunos curiosos podem examinar toda a evidência técnica, enquanto a tela final oferece uma explicação acessível sem se misturar aos dados brutos.
 
 Resultado esperado:
 
 ```text
-SUCESSO: o ping e a captura comprovam o caminho h2 -> eth1 de h1.
+============================================================
+ ETAPA 1/4 - Confirmar a comunicacao antes de usar o XDP
+============================================================
+
+OBJETIVO
+  Verificar se h2 consegue conversar com h1 sem nenhum
+  bloqueio eBPF. Este resultado sera nossa linha de base.
+
+PREPARACAO
+  [OK] XDP esta desativado em h1.
+  [OK] TC esta desativado em h2.
+  [OK] tcpdump observou a interface eth1.
+
+ACAO
+  h2 enviou 2 pedidos de ping para h1 (10.10.12.1).
+  ICMP e o protocolo utilizado pelo comando ping.
+
+O QUE ACONTECEU
+1. h2 enviou 2 pedidos de ping para h1.
+2. h1 recebeu os 2 pedidos pela interface eth1.
+3. h1 enviou 2 respostas para h2.
+4. h2 recebeu as 2 respostas: nenhuma foi perdida.
+
+PACOTES OBSERVADOS PELO TCPDUMP
+  Pedidos:   2  |  h2 (10.10.12.2) -> h1 (10.10.12.1)
+  Respostas: 2  |  h1 (10.10.12.1) -> h2 (10.10.12.2)
+
+CONCLUSAO
+  [SUCESSO] A rede funciona normalmente sem o XDP.
 ```
 
 Essa é a linha de base: ela prova que endereçamento, enlace e rota funcionam antes do filtro.

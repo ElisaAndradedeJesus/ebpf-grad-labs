@@ -138,83 +138,201 @@ test: verify-env
 # na eth1 de h1 a requisicao e a resposta ICMP mostradas tambem pelo ping.
 test-step1: verify-env
 	@set -euo pipefail; \
-	echo "=== ETAPA 1/4: ICMP sem XDP ==="; \
+	capture_file=$$(mktemp); \
+	ping_file=$$(mktemp); \
+	cleanup_logs() { rm -f "$$capture_file" "$$ping_file"; }; \
+	trap cleanup_logs EXIT; \
 	sudo ip netns exec h1 ip link set dev eth1 xdp off >/dev/null 2>&1 || true; \
 	sudo ip netns exec h2 tc qdisc del dev eth1 clsact >/dev/null 2>&1 || true; \
-	echo "Capturando em h1:eth1 enquanto h2 envia dois pings..."; \
-	sudo ip netns exec h1 timeout 6 tcpdump -n -l -i eth1 -c 4 icmp & capture_pid=$$!; \
+	sudo ip netns exec h1 timeout 6 tcpdump -n -l -i eth1 -c 4 icmp 2>&1 | tee "$$capture_file" & capture_pid=$$!; \
 	sleep 1; \
-	if ! sudo ip netns exec h2 ping -c 2 -W 2 "$(H1_LAB_IP)"; then \
+	if ! sudo ip netns exec h2 ping -c 2 -W 2 "$(H1_LAB_IP)" 2>&1 | tee "$$ping_file"; then \
 		wait $$capture_pid || true; \
+		echo; \
 		echo "ERRO: h2 nao conseguiu pingar h1 antes do XDP."; \
 		echo "A linha de base falhou; verifique a topologia e os IPs."; \
+		echo "Saida tecnica do ping:"; \
+		cat "$$ping_file"; \
 		exit 1; \
 	fi; \
 	wait $$capture_pid || true; \
-	echo "SUCESSO: o ping e a captura comprovam o caminho h2 -> eth1 de h1."
+	request_count=$$(grep -c 'echo request' "$$capture_file" || true); \
+	reply_count=$$(grep -c 'echo reply' "$$capture_file" || true); \
+	if [ "$$request_count" -lt 2 ] || [ "$$reply_count" -lt 2 ]; then \
+		echo "ERRO: o ping respondeu, mas o tcpdump nao observou os 4 pacotes esperados."; \
+		echo "Saida tecnica da captura:"; \
+		cat "$$capture_file"; \
+		exit 1; \
+	fi; \
+	echo; \
+	echo "============================================================"; \
+	echo " ETAPA 1/4 - Confirmar a comunicacao antes de usar o XDP"; \
+	echo "============================================================"; \
+	echo; \
+	echo "OBJETIVO"; \
+	echo "  Verificar se h2 consegue conversar com h1 sem nenhum"; \
+	echo "  bloqueio eBPF. Este resultado sera nossa linha de base."; \
+	echo; \
+	echo "PREPARACAO"; \
+	echo "  [OK] XDP esta desativado em h1."; \
+	echo "  [OK] TC esta desativado em h2."; \
+	echo "  [OK] tcpdump observou a interface eth1."; \
+	echo; \
+	echo "ACAO"; \
+	echo "  h2 enviou 2 pedidos de ping para h1 ($(H1_LAB_IP))."; \
+	echo "  ICMP e o protocolo utilizado pelo comando ping."; \
+	echo; \
+	echo "O QUE ACONTECEU"; \
+	echo "1. h2 enviou 2 pedidos de ping para h1."; \
+	echo "2. h1 recebeu os 2 pedidos pela interface eth1."; \
+	echo "3. h1 enviou 2 respostas para h2."; \
+	echo "4. h2 recebeu as 2 respostas: nenhuma foi perdida."; \
+	echo; \
+	echo "PACOTES OBSERVADOS PELO TCPDUMP"; \
+	echo "  Pedidos:   $$request_count  |  h2 ($(H2_LAB_IP)) -> h1 ($(H1_LAB_IP))"; \
+	echo "  Respostas: $$reply_count  |  h1 ($(H1_LAB_IP)) -> h2 ($(H2_LAB_IP))"; \
+	echo; \
+	echo "CONCLUSAO"; \
+	echo "  [SUCESSO] A rede funciona normalmente sem o XDP."; \
+	echo "  Na proxima etapa, repetiremos o ping com o XDP ativo."; \
+	echo "  Se as respostas desaparecerem, saberemos que o XDP causou o bloqueio."; \
+	echo
 
 # Etapa 2: anexa XDP generico ao ingresso de h1, exibe os detalhes do link e
 # deixa o ping mostrar explicitamente a perda causada por XDP_DROP.
 test-step2: verify-env
 	@set -euo pipefail; \
-	echo "=== ETAPA 2/4: ICMP bloqueado por XDP ingress ==="; \
 	sudo ip netns exec h1 ip link set dev eth1 xdp off >/dev/null 2>&1 || true; \
-	echo "Anexando XDP em modo generico, compativel com a interface veth do Containerlab."; \
 	if ! sudo ip netns exec h1 ip link set dev eth1 xdpgeneric obj "$(CURDIR)/xdp.o" sec xdp; then \
 		echo "ERRO: nao foi possivel anexar o programa XDP generico a eth1 de h1."; \
 		echo "O modo generico e usado porque pares veth no WSL podem rejeitar XDP nativo por causa do MTU do peer."; \
 		echo "Verifique o suporte do kernel com: sudo bpftool feature probe kernel"; \
 		exit 1; \
 	fi; \
-	echo "O trecho abaixo deve mostrar prog/xdp anexado a eth1:"; \
+	echo; \
 	sudo ip netns exec h1 ip -details link show dev eth1; \
-	echo "Agora o ping deve exibir 100% de perda:"; \
+	echo; \
 	if sudo ip netns exec h2 ping -c 2 -W 2 "$(H1_LAB_IP)"; then \
 		echo "FALHA: ping passou mesmo com XDP."; \
 		exit 1; \
 	else \
-		echo "SUCESSO: XDP_DROP bloqueou o ICMP no ingresso de h1."; \
-	fi
+		true; \
+	fi; \
+	echo; \
+	echo "============================================================"; \
+	echo " ETAPA 2/4 - Bloquear o ping com XDP no ingresso de h1"; \
+	echo "============================================================"; \
+	echo; \
+	echo "OBJETIVO"; \
+	echo "  Anexar o programa XDP a eth1 de h1 e comprovar que"; \
+	echo "  XDP_DROP impede a chegada dos pedidos de ping."; \
+	echo; \
+	echo "PREPARACAO"; \
+	echo "  [OK] XDP generico foi anexado ao ingresso de h1:eth1."; \
+	echo; \
+	echo "ACAO"; \
+	echo "  h2 enviou 2 pedidos de ping para h1 com o XDP ativo."; \
+	echo; \
+	echo "O QUE ACONTECEU"; \
+	echo "1. O programa XDP foi anexado ao ingresso de h1:eth1."; \
+	echo "2. h2 enviou 2 pedidos de ping para h1."; \
+	echo "3. XDP_DROP descartou os pedidos antes da pilha de rede."; \
+	echo "4. h2 nao recebeu respostas e mostrou 100% de perda."; \
+	echo; \
+	echo "CONCLUSAO"; \
+	echo "  [SUCESSO] O XDP bloqueou ICMP no ingresso de h1."; \
+	echo "  Compare este resultado com a comunicacao normal da etapa 1."; \
+	echo
 
 # Etapa 3: inicia o servidor e captura a negociacao TCP em h1. A saida verbose
 # do Netcat e os pacotes do tcpdump formam a linha de base antes do TC.
 test-step3: verify-env
 	@set -euo pipefail; \
-	echo "=== ETAPA 3/4: TCP/80 sem TC ==="; \
+	capture_file=$$(mktemp); \
+	nc_file=$$(mktemp); \
+	cleanup_logs() { rm -f "$$capture_file" "$$nc_file"; }; \
+	trap cleanup_logs EXIT; \
 	sudo ip netns exec h2 tc qdisc del dev eth1 clsact >/dev/null 2>&1 || true; \
 	sudo ip netns exec h1 sh -c 'nohup nc -lk -p 80 >/tmp/lab2-nc.log 2>&1 &'; \
 	sleep 1; \
-	echo "Capturando em h1:eth1 enquanto h2 abre uma conexao TCP/80..."; \
-	sudo ip netns exec h1 timeout 6 tcpdump -n -l -i eth1 -c 4 'tcp port 80' & capture_pid=$$!; \
+	sudo ip netns exec h1 timeout 6 tcpdump -n -l -i eth1 -c 4 'tcp port 80' 2>&1 | tee "$$capture_file" & capture_pid=$$!; \
 	sleep 1; \
-	if ! sudo ip netns exec h2 nc -v -z -w 2 "$(H1_LAB_IP)" 80; then \
+	if ! sudo ip netns exec h2 nc -v -z -w 2 "$(H1_LAB_IP)" 80 2>&1 | tee "$$nc_file"; then \
 		wait $$capture_pid || true; \
 		echo "ERRO: a conexao TCP/80 falhou antes do filtro TC."; \
 		echo "Verifique se netcat-openbsd foi instalado no container h1 e se o servidor nc iniciou."; \
 		exit 1; \
 	fi; \
 	wait $$capture_pid || true; \
-	echo "SUCESSO: Netcat e tcpdump comprovam que TCP/80 funcionou sem TC."
+	echo; \
+	echo "============================================================"; \
+	echo " ETAPA 3/4 - Confirmar TCP/80 antes de usar o TC"; \
+	echo "============================================================"; \
+	echo; \
+	echo "OBJETIVO"; \
+	echo "  Confirmar que h2 consegue acessar o servidor de h1 na"; \
+	echo "  porta TCP 80 antes de instalar o filtro TC."; \
+	echo; \
+	echo "PREPARACAO"; \
+	echo "  [OK] TC esta desativado em h2."; \
+	echo "  [OK] O servidor esta escutando a porta 80 em h1."; \
+	echo; \
+	echo "ACAO"; \
+	echo "  h2 abriu uma conexao TCP/80 enquanto tcpdump observava."; \
+	echo; \
+	echo "O QUE ACONTECEU"; \
+	echo "1. h1 manteve um servidor escutando na porta TCP 80."; \
+	echo "2. h2 iniciou uma conexao com esse servidor."; \
+	echo "3. O Netcat confirmou a conexao e tcpdump viu os pacotes."; \
+	echo; \
+	echo "CONCLUSAO"; \
+	echo "  [SUCESSO] TCP/80 funciona normalmente sem o filtro TC."; \
+	echo "  Esta e a linha de base para a proxima etapa."; \
+	echo
 
 # Etapa 4: anexa o classificador ao egress de h2. A conexao deve expirar e
 # tc -s mostra o programa e os contadores de pacotes processados pelo hook.
 test-step4: verify-env
 	@set -euo pipefail; \
-	echo "=== ETAPA 4/4: TCP/80 bloqueado por TC egress ==="; \
 	sudo ip netns exec h1 sh -c 'nohup nc -lk -p 80 >/tmp/lab2-nc.log 2>&1 &' || true; \
 	sudo ip netns exec h2 tc qdisc replace dev eth1 clsact; \
 	sudo ip netns exec h2 tc filter replace dev eth1 egress bpf da obj "$(CURDIR)/tc.o" sec classifier; \
-	echo "Filtro anexado ao egress de h2:eth1:"; \
 	sudo ip netns exec h2 tc filter show dev eth1 egress; \
-	echo "A conexao abaixo deve falhar ou expirar:"; \
+	echo; \
 	if sudo ip netns exec h2 nc -v -z -w 2 "$(H1_LAB_IP)" 80; then \
 		echo "FALHA: conexao TCP/80 passou mesmo com TC."; \
 		exit 1; \
 	else \
-		echo "SUCESSO: TC bloqueou TCP/80 no egress de h2."; \
+		true; \
 	fi; \
-	echo "Contadores do classificador apos a tentativa:"; \
-	sudo ip netns exec h2 tc -s filter show dev eth1 egress
+	echo; \
+	sudo ip netns exec h2 tc -s filter show dev eth1 egress; \
+	echo; \
+	echo "============================================================"; \
+	echo " ETAPA 4/4 - Bloquear TCP/80 com TC na saida de h2"; \
+	echo "============================================================"; \
+	echo; \
+	echo "OBJETIVO"; \
+	echo "  Anexar o programa TC ao egress de h2:eth1 e impedir"; \
+	echo "  que a tentativa de conexao TCP/80 saia de h2."; \
+	echo; \
+	echo "PREPARACAO"; \
+	echo "  [OK] O servidor TCP/80 esta ativo em h1."; \
+	echo "  [OK] O programa TC esta anexado ao egress de h2:eth1."; \
+	echo; \
+	echo "ACAO"; \
+	echo "  h2 tentou abrir uma conexao TCP/80 com h1."; \
+	echo; \
+	echo "O QUE ACONTECEU"; \
+	echo "1. O programa TC foi anexado a saida de h2:eth1."; \
+	echo "2. h2 tentou iniciar uma conexao TCP com a porta 80."; \
+	echo "3. TC_ACT_SHOT descartou o pacote antes de ele sair de h2."; \
+	echo "4. A conexao nao foi estabelecida."; \
+	echo; \
+	echo "CONCLUSAO"; \
+	echo "  [SUCESSO] O TC bloqueou TCP/80 no egress de h2."; \
+	echo "  XDP atuou no ingresso; TC atuou na saida."; \
+	echo
 
 # Recupera o ambiente caso uma execucao anterior tenha sido interrompida.
 destroy:

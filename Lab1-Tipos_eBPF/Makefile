@@ -124,9 +124,11 @@ test:
 		echo "ERRO: os programas do Lab 1 ainda nao foram preparados."; \
 		echo "Execute primeiro: make setup"; exit 1; }
 	@set -Eeuo pipefail; \
+	curl_file=$$(mktemp); \
 	cleanup() { \
 		sudo rm -rf "$(PIN_ROOT)" || true; \
 		rm -f kprobe_exec.bpf.o lsm_block.bpf.o vmlinux.h; \
+		rm -f "$$curl_file"; \
 	}; \
 	on_error() { \
 		status=$$?; \
@@ -137,26 +139,64 @@ test:
 	}; \
 	trap cleanup EXIT INT TERM; \
 	trap on_error ERR; \
-	echo "=== LAB 1: Kprobe vs. BPF LSM (WSL 2/x86-64) ==="; \
 	sudo mkdir -p "$(PIN_ROOT)/kprobe"; \
-	echo "Anexando o Kprobe a __x64_sys_execve..."; \
 	sudo bpftool prog loadall kprobe_exec.bpf.o "$(PIN_ROOT)/kprobe" autoattach; \
-	echo "Kprobe carregado. Em outro terminal, observe com:"; \
-	echo "  sudo cat /sys/kernel/tracing/trace_pipe"; \
-	echo "Verificando a disponibilidade do BPF LSM..."; \
+	echo; \
+	echo "SAIDA TECNICA COMPLETA - PROGRAMA KPROBE"; \
+	echo "------------------------------------------------------------"; \
+	sudo bpftool prog show name trace_exec; \
+	echo; \
+	echo "SAIDA TECNICA COMPLETA - LSMS ATIVOS"; \
+	echo "------------------------------------------------------------"; \
+	sudo cat /sys/kernel/security/lsm 2>/dev/null || echo "securityfs indisponivel"; \
+	lsm_result="indisponivel neste kernel"; \
 	if sudo test -r /sys/kernel/security/lsm && sudo grep -qw bpf /sys/kernel/security/lsm; then \
 		sudo mkdir -p "$(PIN_ROOT)/lsm"; \
 		sudo bpftool prog loadall lsm_block.bpf.o "$(PIN_ROOT)/lsm" autoattach; \
-		if curl --version >/dev/null 2>&1; then \
+		echo; \
+		echo "SAIDA TECNICA COMPLETA - PROGRAMA BPF LSM"; \
+		echo "------------------------------------------------------------"; \
+		sudo bpftool prog show; \
+		echo; \
+		echo "SAIDA TECNICA COMPLETA - TENTATIVA DE EXECUTAR CURL"; \
+		echo "------------------------------------------------------------"; \
+		if curl --version >"$$curl_file" 2>&1; then \
+			cat "$$curl_file"; \
 			echo "FALHA: o curl foi executado mesmo com o BPF LSM carregado."; \
 			exit 1; \
 		else \
-			echo "SUCESSO: a execucao do curl foi bloqueada pelo BPF LSM."; \
+			cat "$$curl_file"; \
+			lsm_result="ativo: a execucao do curl foi bloqueada"; \
 		fi; \
-	else \
-		echo "AVISO: BPF LSM nao esta ativo neste kernel; o teste de bloqueio sera ignorado."; \
-		echo "LSMs ativos: $$(sudo cat /sys/kernel/security/lsm 2>/dev/null || echo 'indisponivel')"; \
 	fi; \
+	echo; \
+	echo "============================================================"; \
+	echo " LAB 1 - Carregar Kprobe e verificar o BPF LSM"; \
+	echo "============================================================"; \
+	echo; \
+	echo "OBJETIVO"; \
+	echo "  Observar execucoes de programas com Kprobe e verificar"; \
+	echo "  se este kernel permite bloquear execucoes com BPF LSM."; \
+	echo; \
+	echo "PREPARACAO"; \
+	echo "  [OK] O Kprobe trace_exec esta carregado no kernel."; \
+	echo "  [INFO] BPF LSM: $$lsm_result."; \
+	echo; \
+	echo "ACAO"; \
+	echo "  O Kprobe foi anexado a __x64_sys_execve."; \
+	echo "  Cada novo programa executado pode gerar uma linha no trace_pipe."; \
+	echo; \
+	echo "O QUE ACONTECEU"; \
+	echo "1. bpftool carregou e anexou o programa trace_exec."; \
+	echo "2. O kernel passou a chamar o Kprobe durante execve."; \
+	echo "3. A disponibilidade do BPF LSM tambem foi verificada."; \
+	echo; \
+	echo "CONCLUSAO"; \
+	echo "  [SUCESSO] O Kprobe esta pronto para ser observado."; \
+	echo "  Abra outro terminal e execute:"; \
+	echo "    sudo cat /sys/kernel/tracing/trace_pipe"; \
+	echo "  Em um terceiro terminal, execute: ls, date e whoami."; \
+	echo; \
 	echo "Pressione Enter para encerrar e remover os programas eBPF."; \
 	read -r
 
