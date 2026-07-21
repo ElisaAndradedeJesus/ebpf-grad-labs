@@ -16,7 +16,7 @@ H1_LAB_IP := 10.10.12.1
 H2_LAB_IP := 10.10.12.2
 LAB_PREFIX := 24
 
-.PHONY: help check build setup test destroy clean
+.PHONY: help check build setup verify-env test test-step1 test-step2 test-step3 test-step4 destroy clean
 
 # Mostra a interface publica do laboratorio.
 help:
@@ -24,7 +24,11 @@ help:
 	@echo "  make check    verifica as dependencias"
 	@echo "  make build    compila os programas eBPF"
 	@echo "  make setup    compila e monta a topologia"
-	@echo "  make test     executa os testes na topologia pronta"
+	@echo "  make test     executa as quatro etapas em sequencia"
+	@echo "  make test-step1  mostra o ping funcionando sem XDP"
+	@echo "  make test-step2  anexa XDP e mostra o bloqueio do ping"
+	@echo "  make test-step3  mostra TCP/80 funcionando sem TC"
+	@echo "  make test-step4  anexa TC e mostra o bloqueio de TCP/80"
 	@echo "  make destroy  destroi uma topologia remanescente"
 	@echo "  make clean    destroi a topologia e remove objetos"
 
@@ -109,9 +113,9 @@ setup: build
 	echo "Topologia ativa: h1 ($(H1_LAB_IP)) <-> h2 ($(H2_LAB_IP))"; \
 	echo "Execute os testes com: make test"
 
-# Executa somente os testes. A linha de base e medida antes de cada filtro para
-# evitar falsos positivos. A topologia permanece ativa ao final para inspecao.
-test:
+# Verificacao compartilhada pelas quatro etapas. Em vez de apenas examinar os
+# links de /var/run/netns, executa um comando real dentro de cada namespace.
+verify-env:
 	@test -f xdp.o -a -f tc.o || { \
 		echo "ERRO: os programas eBPF do Lab 2 nao foram compilados."; \
 		echo "Execute primeiro: make setup"; exit 1; }
@@ -119,25 +123,42 @@ test:
 	 sudo ip netns exec h2 true >/dev/null 2>&1 || { \
 		echo "ERRO: os namespaces h1 e h2 nao estao acessiveis."; \
 		echo "A topologia pode ter sido encerrada. Execute novamente: make setup"; exit 1; }
-	@set -Eeuo pipefail; \
-	on_error() { \
-		status=$$?; \
-		echo "ERRO: o Lab 2 foi interrompido antes de concluir os testes de XDP e TC."; \
-		echo "Leia a mensagem imediatamente acima: ela indica a etapa que falhou."; \
-		echo "A topologia foi mantida para inspecao. Remova-a com: make clean"; \
-		exit $$status; \
-	}; \
-	trap on_error ERR; \
-	echo "=== LAB 2: XDP ingress vs. TC egress ==="; \
+
+# Atalho opcional: executa exatamente os mesmos alvos que o aluno pode chamar
+# separadamente. A divisao permite observar e discutir uma etapa por vez.
+test: verify-env
+	@$(MAKE) --no-print-directory test-step1
+	@$(MAKE) --no-print-directory test-step2
+	@$(MAKE) --no-print-directory test-step3
+	@$(MAKE) --no-print-directory test-step4
+	@echo "Todos os testes do Lab 2 foram concluidos."
+	@echo "A topologia continua ativa para inspecao. Ao terminar, execute: make clean"
+
+# Etapa 1: prova visualmente que a rede funciona antes do XDP. tcpdump observa
+# na eth1 de h1 a requisicao e a resposta ICMP mostradas tambem pelo ping.
+test-step1: verify-env
+	@set -euo pipefail; \
+	echo "=== ETAPA 1/4: ICMP sem XDP ==="; \
 	sudo ip netns exec h1 ip link set dev eth1 xdp off >/dev/null 2>&1 || true; \
 	sudo ip netns exec h2 tc qdisc del dev eth1 clsact >/dev/null 2>&1 || true; \
-	echo "[XDP 1/2] Linha de base: ICMP deve funcionar antes do filtro."; \
-	if ! sudo ip netns exec h2 ping -c 1 -W 2 "$(H1_LAB_IP)" >/dev/null; then \
+	echo "Capturando em h1:eth1 enquanto h2 envia dois pings..."; \
+	sudo ip netns exec h1 timeout 6 tcpdump -n -l -i eth1 -c 4 icmp & capture_pid=$$!; \
+	sleep 1; \
+	if ! sudo ip netns exec h2 ping -c 2 -W 2 "$(H1_LAB_IP)"; then \
+		wait $$capture_pid || true; \
 		echo "ERRO: h2 nao conseguiu pingar h1 antes do XDP."; \
-		echo "A linha de base falhou; verifique a topologia, os IPs e a instalacao de iputils-ping nos containers."; \
+		echo "A linha de base falhou; verifique a topologia e os IPs."; \
 		exit 1; \
 	fi; \
-	echo "SUCESSO: ping funcionou sem XDP."; \
+	wait $$capture_pid || true; \
+	echo "SUCESSO: o ping e a captura comprovam o caminho h2 -> eth1 de h1."
+
+# Etapa 2: anexa XDP generico ao ingresso de h1, exibe os detalhes do link e
+# deixa o ping mostrar explicitamente a perda causada por XDP_DROP.
+test-step2: verify-env
+	@set -euo pipefail; \
+	echo "=== ETAPA 2/4: ICMP bloqueado por XDP ingress ==="; \
+	sudo ip netns exec h1 ip link set dev eth1 xdp off >/dev/null 2>&1 || true; \
 	echo "Anexando XDP em modo generico, compativel com a interface veth do Containerlab."; \
 	if ! sudo ip netns exec h1 ip link set dev eth1 xdpgeneric obj "$(CURDIR)/xdp.o" sec xdp; then \
 		echo "ERRO: nao foi possivel anexar o programa XDP generico a eth1 de h1."; \
@@ -145,33 +166,55 @@ test:
 		echo "Verifique o suporte do kernel com: sudo bpftool feature probe kernel"; \
 		exit 1; \
 	fi; \
-	echo "[XDP 2/2] Com XDP: ICMP deve ser descartado no ingresso de h1."; \
-	if sudo ip netns exec h2 ping -c 1 -W 2 "$(H1_LAB_IP)" >/dev/null 2>&1; then \
+	echo "O trecho abaixo deve mostrar prog/xdp anexado a eth1:"; \
+	sudo ip netns exec h1 ip -details link show dev eth1; \
+	echo "Agora o ping deve exibir 100% de perda:"; \
+	if sudo ip netns exec h2 ping -c 2 -W 2 "$(H1_LAB_IP)"; then \
 		echo "FALHA: ping passou mesmo com XDP."; \
 		exit 1; \
 	else \
-		echo "SUCESSO: XDP bloqueou o ICMP no ingresso de h1."; \
-	fi; \
+		echo "SUCESSO: XDP_DROP bloqueou o ICMP no ingresso de h1."; \
+	fi
+
+# Etapa 3: inicia o servidor e captura a negociacao TCP em h1. A saida verbose
+# do Netcat e os pacotes do tcpdump formam a linha de base antes do TC.
+test-step3: verify-env
+	@set -euo pipefail; \
+	echo "=== ETAPA 3/4: TCP/80 sem TC ==="; \
+	sudo ip netns exec h2 tc qdisc del dev eth1 clsact >/dev/null 2>&1 || true; \
 	sudo ip netns exec h1 sh -c 'nohup nc -lk -p 80 >/tmp/lab2-nc.log 2>&1 &'; \
 	sleep 1; \
-	echo "[TC 1/2] Linha de base: TCP/80 deve funcionar antes do filtro."; \
-	if ! sudo ip netns exec h2 nc -z -w 2 "$(H1_LAB_IP)" 80; then \
+	echo "Capturando em h1:eth1 enquanto h2 abre uma conexao TCP/80..."; \
+	sudo ip netns exec h1 timeout 6 tcpdump -n -l -i eth1 -c 4 'tcp port 80' & capture_pid=$$!; \
+	sleep 1; \
+	if ! sudo ip netns exec h2 nc -v -z -w 2 "$(H1_LAB_IP)" 80; then \
+		wait $$capture_pid || true; \
 		echo "ERRO: a conexao TCP/80 falhou antes do filtro TC."; \
 		echo "Verifique se netcat-openbsd foi instalado no container h1 e se o servidor nc iniciou."; \
 		exit 1; \
 	fi; \
-	echo "SUCESSO: conexao TCP/80 funcionou sem TC."; \
+	wait $$capture_pid || true; \
+	echo "SUCESSO: Netcat e tcpdump comprovam que TCP/80 funcionou sem TC."
+
+# Etapa 4: anexa o classificador ao egress de h2. A conexao deve expirar e
+# tc -s mostra o programa e os contadores de pacotes processados pelo hook.
+test-step4: verify-env
+	@set -euo pipefail; \
+	echo "=== ETAPA 4/4: TCP/80 bloqueado por TC egress ==="; \
+	sudo ip netns exec h1 sh -c 'nohup nc -lk -p 80 >/tmp/lab2-nc.log 2>&1 &' || true; \
 	sudo ip netns exec h2 tc qdisc replace dev eth1 clsact; \
 	sudo ip netns exec h2 tc filter replace dev eth1 egress bpf da obj "$(CURDIR)/tc.o" sec classifier; \
-	echo "[TC 2/2] Com TC: TCP/80 deve ser descartado na saida de h2."; \
-	if sudo ip netns exec h2 nc -z -w 2 "$(H1_LAB_IP)" 80; then \
+	echo "Filtro anexado ao egress de h2:eth1:"; \
+	sudo ip netns exec h2 tc filter show dev eth1 egress; \
+	echo "A conexao abaixo deve falhar ou expirar:"; \
+	if sudo ip netns exec h2 nc -v -z -w 2 "$(H1_LAB_IP)" 80; then \
 		echo "FALHA: conexao TCP/80 passou mesmo com TC."; \
 		exit 1; \
 	else \
 		echo "SUCESSO: TC bloqueou TCP/80 no egress de h2."; \
 	fi; \
-	echo "Todos os testes do Lab 2 foram concluidos."; \
-	echo "A topologia continua ativa para inspecao. Ao terminar, execute: make clean"
+	echo "Contadores do classificador apos a tentativa:"; \
+	sudo ip netns exec h2 tc -s filter show dev eth1 egress
 
 # Recupera o ambiente caso uma execucao anterior tenha sido interrompida.
 destroy:

@@ -43,6 +43,18 @@ A rede experimental `10.10.12.0/24` é diferente da rede administrativa do Conta
 - `tc_egress_drop.bpf.c`: retorna `TC_ACT_SHOT` para TCP com destino à porta 80;
 - `Makefile`: verifica, compila, executa, testa e limpa o laboratório.
 
+## Ferramentas de visualização
+
+O laboratório utiliza ferramentas de terminal instaladas automaticamente nos containers:
+
+- `ping`: mostra cada resposta ICMP e o percentual de perda;
+- `tcpdump`: exibe os pacotes que realmente atravessam `eth1`;
+- `ip -details link`: mostra o programa XDP anexado à interface;
+- `nc -v`: mostra se a conexão TCP foi estabelecida ou expirou;
+- `tc -s`: mostra o classificador TC e seus contadores.
+
+Essa combinação permite observar o experimento diretamente no terminal e é mais leve que uma interface gráfica para as máquinas do curso.
+
 ## Antes de começar
 
 Este passo a passo considera que o ambiente do README principal já foi preparado e que você está na raiz de `ebpf-grad-labs`.
@@ -84,17 +96,32 @@ make setup
 
 O Makefile compila os programas, cria os dois containers e configura a rede experimental. Nenhum filtro é anexado e nenhum teste é executado nessa etapa.
 
-### 5. Execute os testes
+### 5. Execute uma etapa por vez
+
+```bash
+make test-step1
+make test-step2
+make test-step3
+make test-step4
+```
+
+Pare depois de cada comando para ler a saída e relacioná-la ao diagrama do laboratório. Se quiser executar as quatro etapas automaticamente, use:
 
 ```bash
 make test
 ```
 
-Esse comando executa as linhas de base, anexa XDP e TC e verifica os dois bloqueios. A topologia permanece ativa ao final para que você possa inspecioná-la.
+A topologia permanece ativa ao final para que você possa inspecioná-la.
 
 ## Como interpretar os testes
 
-### XDP 1/2: linha de base
+### Etapa 1/4: ICMP sem XDP
+
+Execute:
+
+```bash
+make test-step1
+```
 
 Antes de anexar XDP, `h2` envia ICMP para `h1`:
 
@@ -102,37 +129,73 @@ Antes de anexar XDP, `h2` envia ICMP para `h1`:
 h2 ── ping ──> h1
 ```
 
-O ping precisa funcionar. Se ele já falhar, o experimento é interrompido porque uma falha posterior não provaria a atuação do XDP.
+O Makefile inicia `tcpdump` na `eth1` de `h1` e mostra a saída completa de dois pings. Devem aparecer requisições e respostas ICMP, seguidas de `0% packet loss`.
 
 Resultado esperado:
 
 ```text
-SUCESSO: ping funcionou sem XDP.
+SUCESSO: o ping e a captura comprovam o caminho h2 -> eth1 de h1.
 ```
 
-### XDP 2/2: filtro no ingresso
+Essa é a linha de base: ela prova que endereçamento, enlace e rota funcionam antes do filtro.
+
+### Etapa 2/4: ICMP bloqueado por XDP ingress
+
+Execute:
+
+```bash
+make test-step2
+```
 
 O programa é anexado a `eth1` de `h1`. Pacotes ICMP recebidos passam pelo hook XDP e retornam `XDP_DROP`.
 
+O comando `ip -details link` mostra `prog/xdp` na interface. Em seguida, a saída real do ping deve mostrar que nenhuma resposta chegou:
+
+```text
+2 packets transmitted, 0 received, 100% packet loss
+```
+
 Resultado esperado:
 
 ```text
-SUCESSO: XDP bloqueou o ICMP no ingresso de h1.
+SUCESSO: XDP_DROP bloqueou o ICMP no ingresso de h1.
 ```
 
-### TC 1/2: linha de base
+O ping falhar agora é uma evidência válida porque a mesma comunicação funcionou na etapa anterior.
+
+### Etapa 3/4: TCP/80 sem TC
+
+Execute:
+
+```bash
+make test-step3
+```
 
 O Makefile inicia um servidor com Netcat na porta 80 de `h1`. Antes do TC, `h2` precisa conseguir abrir uma conexão TCP.
 
+O `tcpdump` mostra a negociação na `eth1` de `h1`, enquanto `nc -v` apresenta:
+
+```text
+Connection to 10.10.12.1 80 port [tcp/http] succeeded!
+```
+
 Resultado esperado:
 
 ```text
-SUCESSO: conexao TCP/80 funcionou sem TC.
+SUCESSO: Netcat e tcpdump comprovam que TCP/80 funcionou sem TC.
 ```
 
-### TC 2/2: filtro no egress
+### Etapa 4/4: TCP/80 bloqueado por TC egress
+
+Execute:
+
+```bash
+make test-step4
+```
 
 O classificador TC é anexado ao egress de `eth1` em `h2`. Quando o destino TCP é a porta 80, o programa retorna `TC_ACT_SHOT`.
+
+O Makefile mostra primeiro o filtro anexado. A tentativa de conexão deve expirar e, depois, `tc -s` exibe os contadores do classificador que processou o pacote.
 
 Resultado esperado:
 
@@ -142,7 +205,7 @@ SUCESSO: TC bloqueou TCP/80 no egress de h2.
 
 ## Evidências do experimento
 
-Quando o Makefile pedir Enter, a topologia ainda estará ativa. Em outro terminal, você pode inspecionar:
+A topologia continua ativa depois de cada etapa. Em outro terminal, você também pode inspecionar:
 
 ```bash
 sudo ip netns exec h1 ip -details link show dev eth1
@@ -195,7 +258,7 @@ make test
 
 ### Falha durante a instalação de pacotes nos containers
 
-Confirme o acesso à internet e tente novamente. Na primeira execução, os containers instalam `iproute2`, `iputils-ping` e `netcat-openbsd`.
+Confirme o acesso à internet e tente novamente. Na primeira execução, os containers instalam `iproute2`, `iputils-ping`, `netcat-openbsd` e `tcpdump`.
 
 ### XDP não pode ser anexado
 
