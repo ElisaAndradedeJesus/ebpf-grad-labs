@@ -16,7 +16,9 @@ H1_LAB_IP := 10.10.12.1
 H2_LAB_IP := 10.10.12.2
 LAB_PREFIX := 24
 
-.PHONY: help check build setup verify-env test test-step1 test-step2 test-step3 test-step4 destroy clean
+.PHONY: help check build setup verify-env test \
+	test-xdp-baseline test-xdp-filter test-tc-baseline test-tc-filter \
+	destroy clean
 
 # Mostra a interface publica do laboratorio.
 help:
@@ -24,11 +26,11 @@ help:
 	@echo "  make check    verifica as dependencias"
 	@echo "  make build    compila os programas eBPF"
 	@echo "  make setup    compila e monta a topologia"
-	@echo "  make test     executa as quatro etapas em sequencia"
-	@echo "  make test-step1  mostra o ping funcionando sem XDP"
-	@echo "  make test-step2  anexa XDP e mostra o bloqueio do ping"
-	@echo "  make test-step3  mostra TCP/80 funcionando sem TC"
-	@echo "  make test-step4  anexa TC e mostra o bloqueio de TCP/80"
+	@echo "  make test     executa os experimentos XDP e TC"
+	@echo "  make test-xdp-baseline  mostra o ping funcionando sem XDP"
+	@echo "  make test-xdp-filter    anexa XDP e mostra o bloqueio do ping"
+	@echo "  make test-tc-baseline   mostra TCP/80 funcionando sem TC"
+	@echo "  make test-tc-filter     anexa TC e mostra o bloqueio de TCP/80"
 	@echo "  make destroy  destroi uma topologia remanescente"
 	@echo "  make clean    destroi a topologia e remove objetos"
 
@@ -113,7 +115,7 @@ setup: build
 	echo "Topologia ativa: h1 ($(H1_LAB_IP)) <-> h2 ($(H2_LAB_IP))"; \
 	echo "Execute os testes com: make test"
 
-# Verificacao compartilhada pelas quatro etapas. Em vez de apenas examinar os
+# Verificacao compartilhada pelos quatro testes. Em vez de apenas examinar os
 # links de /var/run/netns, executa um comando real dentro de cada namespace.
 verify-env:
 	@test -f xdp.o -a -f tc.o || { \
@@ -127,16 +129,16 @@ verify-env:
 # Atalho opcional: executa exatamente os mesmos alvos que o aluno pode chamar
 # separadamente. A divisao permite observar e discutir uma etapa por vez.
 test: verify-env
-	@$(MAKE) --no-print-directory test-step1
-	@$(MAKE) --no-print-directory test-step2
-	@$(MAKE) --no-print-directory test-step3
-	@$(MAKE) --no-print-directory test-step4
+	@$(MAKE) --no-print-directory test-xdp-baseline
+	@$(MAKE) --no-print-directory test-xdp-filter
+	@$(MAKE) --no-print-directory test-tc-baseline
+	@$(MAKE) --no-print-directory test-tc-filter
 	@echo "Todos os testes do Lab 2 foram concluidos."
 	@echo "A topologia continua ativa para inspecao. Ao terminar, execute: make clean"
 
 # Etapa 1: prova visualmente que a rede funciona antes do XDP. tcpdump observa
 # na eth1 de h1 a requisicao e a resposta ICMP mostradas tambem pelo ping.
-test-step1: verify-env
+test-xdp-baseline: verify-env
 	@set -euo pipefail; \
 	capture_file=$$(mktemp); \
 	ping_file=$$(mktemp); \
@@ -166,7 +168,7 @@ test-step1: verify-env
 	fi; \
 	echo; \
 	echo "============================================================"; \
-	echo " ETAPA 1/4 - Confirmar a comunicacao antes de usar o XDP"; \
+	echo " XDP - TESTE 1/2: comunicacao antes de ativar o filtro"; \
 	echo "============================================================"; \
 	echo; \
 	echo "OBJETIVO"; \
@@ -200,7 +202,7 @@ test-step1: verify-env
 
 # Etapa 2: anexa XDP generico ao ingresso de h1, exibe os detalhes do link e
 # deixa o ping mostrar explicitamente a perda causada por XDP_DROP.
-test-step2: verify-env
+test-xdp-filter: verify-env
 	@set -euo pipefail; \
 	sudo ip netns exec h1 ip link set dev eth1 xdp off >/dev/null 2>&1 || true; \
 	if ! sudo ip netns exec h1 ip link set dev eth1 xdpgeneric obj "$(CURDIR)/xdp.o" sec xdp; then \
@@ -220,7 +222,7 @@ test-step2: verify-env
 	fi; \
 	echo; \
 	echo "============================================================"; \
-	echo " ETAPA 2/4 - Bloquear o ping com XDP no ingresso de h1"; \
+	echo " XDP - TESTE 2/2: bloquear o ping no ingresso de h1"; \
 	echo "============================================================"; \
 	echo; \
 	echo "OBJETIVO"; \
@@ -246,7 +248,7 @@ test-step2: verify-env
 
 # Etapa 3: inicia o servidor e captura a negociacao TCP em h1. A saida verbose
 # do Netcat e os pacotes do tcpdump formam a linha de base antes do TC.
-test-step3: verify-env
+test-tc-baseline: verify-env
 	@set -euo pipefail; \
 	capture_file=$$(mktemp); \
 	nc_file=$$(mktemp); \
@@ -266,7 +268,7 @@ test-step3: verify-env
 	wait $$capture_pid || true; \
 	echo; \
 	echo "============================================================"; \
-	echo " ETAPA 3/4 - Confirmar TCP/80 antes de usar o TC"; \
+	echo " TC - TESTE 1/2: conexao TCP/80 antes de ativar o filtro"; \
 	echo "============================================================"; \
 	echo; \
 	echo "OBJETIVO"; \
@@ -292,7 +294,7 @@ test-step3: verify-env
 
 # Etapa 4: anexa o classificador ao egress de h2. A conexao deve expirar e
 # tc -s mostra o programa e os contadores de pacotes processados pelo hook.
-test-step4: verify-env
+test-tc-filter: verify-env
 	@set -euo pipefail; \
 	sudo ip netns exec h1 sh -c 'nohup nc -lk -p 80 >/tmp/lab2-nc.log 2>&1 &' || true; \
 	sudo ip netns exec h2 tc qdisc replace dev eth1 clsact; \
@@ -309,7 +311,7 @@ test-step4: verify-env
 	sudo ip netns exec h2 tc -s filter show dev eth1 egress; \
 	echo; \
 	echo "============================================================"; \
-	echo " ETAPA 4/4 - Bloquear TCP/80 com TC na saida de h2"; \
+	echo " TC - TESTE 2/2: bloquear TCP/80 na saida de h2"; \
 	echo "============================================================"; \
 	echo; \
 	echo "OBJETIVO"; \

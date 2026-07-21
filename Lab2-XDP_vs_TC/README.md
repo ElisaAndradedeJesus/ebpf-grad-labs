@@ -96,16 +96,21 @@ make setup
 
 O Makefile compila os programas, cria os dois containers e configura a rede experimental. Nenhum filtro é anexado e nenhum teste é executado nessa etapa.
 
-### 5. Execute uma etapa por vez
+### 5. Execute um experimento por vez
+
+O Lab 2 possui dois experimentos separados. Primeiro estudamos XDP no ingresso de `h1`; depois estudamos TC na saída de `h2`.
 
 ```bash
-make test-step1
-make test-step2
-make test-step3
-make test-step4
+# Experimento XDP
+make test-xdp-baseline
+make test-xdp-filter
+
+# Experimento TC
+make test-tc-baseline
+make test-tc-filter
 ```
 
-Pare depois de cada comando para ler a saída e relacioná-la ao diagrama do laboratório. Se quiser executar as quatro etapas automaticamente, use:
+Pare depois de cada comando para ler a saída técnica e a explicação final. Se quiser executar os dois experimentos automaticamente, use:
 
 ```bash
 make test
@@ -113,14 +118,34 @@ make test
 
 A topologia permanece ativa ao final para que você possa inspecioná-la.
 
-## Como interpretar os testes
+## Experimento 1: XDP no ingresso
 
-### Etapa 1/4: ICMP sem XDP
+### O que estamos estudando
+
+XDP permite executar um programa eBPF quando um pacote entra em uma interface de rede. Ele atua antes de grande parte do processamento tradicional da pilha Linux.
+
+Neste laboratório, o programa `xdp_drop_icmp.bpf.c` é anexado ao ingresso de `eth1` em `h1`:
+
+```text
+h2 envia ICMP
+      |
+      v
+h1:eth1 -- entrada --> XDP --> pilha de rede de h1
+                         |
+                         +-- XDP_DROP: descarta ICMP
+                         +-- XDP_PASS: permite os demais pacotes
+```
+
+O programa verifica o protocolo do pacote. Quando encontra ICMP, utilizado pelo `ping`, retorna `XDP_DROP`. Para os demais protocolos, retorna `XDP_PASS`.
+
+Usaremos dois testes: uma linha de base sem XDP e a repetição do mesmo ping com XDP. Comparar os dois resultados permite atribuir o bloqueio ao programa eBPF.
+
+### XDP — teste 1/2: linha de base sem filtro
 
 Execute:
 
 ```bash
-make test-step1
+make test-xdp-baseline
 ```
 
 Antes de anexar XDP, `h2` envia ICMP para `h1`:
@@ -137,7 +162,7 @@ Resultado esperado:
 
 ```text
 ============================================================
- ETAPA 1/4 - Confirmar a comunicacao antes de usar o XDP
+ XDP - TESTE 1/2: comunicacao antes de ativar o filtro
 ============================================================
 
 OBJETIVO
@@ -169,12 +194,12 @@ CONCLUSAO
 
 Essa é a linha de base: ela prova que endereçamento, enlace e rota funcionam antes do filtro.
 
-### Etapa 2/4: ICMP bloqueado por XDP ingress
+### XDP — teste 2/2: filtro no ingresso
 
 Execute:
 
 ```bash
-make test-step2
+make test-xdp-filter
 ```
 
 O programa é anexado a `eth1` de `h1`. Pacotes ICMP recebidos passam pelo hook XDP e retornam `XDP_DROP`.
@@ -191,14 +216,34 @@ Resultado esperado:
 SUCESSO: XDP_DROP bloqueou o ICMP no ingresso de h1.
 ```
 
-O ping falhar agora é uma evidência válida porque a mesma comunicação funcionou na etapa anterior.
+O ping falhar agora é uma evidência válida porque a mesma comunicação funcionou no teste XDP anterior.
 
-### Etapa 3/4: TCP/80 sem TC
+## Experimento 2: TC na saída
+
+### O que estamos estudando
+
+TC, ou Traffic Control, oferece hooks eBPF associados ao sistema de controle de tráfego do Linux. Diferentemente do experimento XDP, usaremos o hook de **egress**, que observa os pacotes quando eles estão saindo de `h2`.
+
+O programa `tc_egress_drop.bpf.c` é anexado ao egress de `eth1` em `h2`:
+
+```text
+aplicacao em h2 tenta conectar na porta 80
+                    |
+                    v
+pilha de rede de h2 --> TC egress --> h2:eth1 --> h1
+                           |
+                           +-- TC_ACT_SHOT: descarta TCP/80
+                           +-- TC_ACT_OK: permite os demais pacotes
+```
+
+Agora o tráfego testado não é ICMP, mas uma conexão TCP destinada à porta 80. O Netcat cria o servidor e tenta estabelecer a conexão; `tcpdump` e os contadores do TC fornecem as evidências técnicas.
+
+### TC — teste 1/2: linha de base sem filtro
 
 Execute:
 
 ```bash
-make test-step3
+make test-tc-baseline
 ```
 
 O Makefile inicia um servidor com Netcat na porta 80 de `h1`. Antes do TC, `h2` precisa conseguir abrir uma conexão TCP.
@@ -215,12 +260,14 @@ Resultado esperado:
 SUCESSO: Netcat e tcpdump comprovam que TCP/80 funcionou sem TC.
 ```
 
-### Etapa 4/4: TCP/80 bloqueado por TC egress
+Essa linha de base prova que o servidor, a porta e o caminho de rede funcionam antes do filtro TC.
+
+### TC — teste 2/2: filtro no egress
 
 Execute:
 
 ```bash
-make test-step4
+make test-tc-filter
 ```
 
 O classificador TC é anexado ao egress de `eth1` em `h2`. Quando o destino TCP é a porta 80, o programa retorna `TC_ACT_SHOT`.
@@ -232,6 +279,27 @@ Resultado esperado:
 ```text
 SUCESSO: TC bloqueou TCP/80 no egress de h2.
 ```
+
+## Comparando XDP e TC
+
+Os dois experimentos descartam pacotes com programas eBPF, mas fazem isso em locais e momentos diferentes:
+
+| Característica | XDP neste laboratório | TC neste laboratório |
+|---|---|---|
+| Direção observada | Ingresso | Egress |
+| Interface | `h1:eth1` | `h2:eth1` |
+| Momento | Muito cedo na entrada | Na saída, depois da pilha de rede |
+| Tráfego testado | ICMP do `ping` | TCP destinado à porta 80 |
+| Ação de descarte | `XDP_DROP` | `TC_ACT_SHOT` |
+| Ferramenta principal de evidência | `ping`, `tcpdump` e `ip -details` | Netcat, `tcpdump` e `tc -s` |
+
+O objetivo não é afirmar que uma tecnologia é sempre melhor que a outra. A escolha depende do ponto do caminho de rede em que o programa precisa atuar e das informações necessárias para tomar a decisão.
+
+Neste exemplo:
+
+- XDP demonstra uma decisão muito antecipada sobre pacotes recebidos por `h1`;
+- TC demonstra uma política aplicada aos pacotes que tentam sair de `h2`;
+- as linhas de base mostram que ambos os bloqueios foram causados pelos programas eBPF, e não por uma falha prévia da rede.
 
 ## Evidências do experimento
 
