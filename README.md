@@ -6,7 +6,7 @@ Bem-vindos à disciplina prática de **eBPF (Extended Berkeley Packet Filter)**.
 
 ## Atualizando repositório local
 
-Sessão temporária apenas para facilitar a atualização dos repoistótios locias nas máquinas de teste.
+Sessão temporária apenas para facilitar a atualização dos repoistótios locais nas máquinas de teste.
 
 ```bash
 cd ~

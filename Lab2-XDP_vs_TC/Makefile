@@ -16,9 +16,9 @@ H1_LAB_IP := 10.10.12.1
 H2_LAB_IP := 10.10.12.2
 LAB_PREFIX := 24
 
-.PHONY: help check build setup verify-env test \
+.PHONY: help check build setup verify-env \
 	test-xdp-baseline test-xdp-filter test-tc-baseline test-tc-filter \
-	destroy clean
+	detach-xdp detach-tc destroy clean
 
 # Mostra a interface publica do laboratorio.
 help:
@@ -26,11 +26,12 @@ help:
 	@echo "  make check    verifica as dependencias"
 	@echo "  make build    compila os programas eBPF"
 	@echo "  make setup    compila e monta a topologia"
-	@echo "  make test     executa os experimentos XDP e TC"
 	@echo "  make test-xdp-baseline  mostra o ping funcionando sem XDP"
 	@echo "  make test-xdp-filter    anexa XDP e mostra o bloqueio do ping"
+	@echo "  make detach-xdp         desanexa o programa XDP"
 	@echo "  make test-tc-baseline   mostra TCP/80 funcionando sem TC"
 	@echo "  make test-tc-filter     anexa TC e mostra o bloqueio de TCP/80"
+	@echo "  make detach-tc          desanexa o programa TC"
 	@echo "  make destroy  destroi uma topologia remanescente"
 	@echo "  make clean    destroi a topologia e remove objetos"
 
@@ -113,7 +114,7 @@ setup: build
 	sudo ip netns exec h2 ip link set eth1 up; \
 	echo "Ambiente do Lab 2 preparado."; \
 	echo "Topologia ativa: h1 ($(H1_LAB_IP)) <-> h2 ($(H2_LAB_IP))"; \
-	echo "Execute os testes com: make test"
+	echo "Inicie o experimento XDP com: make test-xdp-baseline"
 
 # Verificacao compartilhada pelos quatro testes. Em vez de apenas examinar os
 # links de /var/run/netns, executa um comando real dentro de cada namespace.
@@ -126,16 +127,6 @@ verify-env:
 		echo "ERRO: os namespaces h1 e h2 nao estao acessiveis."; \
 		echo "A topologia pode ter sido encerrada. Execute novamente: make setup"; exit 1; }
 
-# Atalho opcional: executa exatamente os mesmos alvos que o aluno pode chamar
-# separadamente. A divisao permite observar e discutir uma etapa por vez.
-test: verify-env
-	@$(MAKE) --no-print-directory test-xdp-baseline
-	@$(MAKE) --no-print-directory test-xdp-filter
-	@$(MAKE) --no-print-directory test-tc-baseline
-	@$(MAKE) --no-print-directory test-tc-filter
-	@echo "Todos os testes do Lab 2 foram concluidos."
-	@echo "A topologia continua ativa para inspecao. Ao terminar, execute: make clean"
-
 # Etapa 1: prova visualmente que a rede funciona antes do XDP. tcpdump observa
 # na eth1 de h1 a requisicao e a resposta ICMP mostradas tambem pelo ping.
 test-xdp-baseline: verify-env
@@ -144,8 +135,7 @@ test-xdp-baseline: verify-env
 	ping_file=$$(mktemp); \
 	cleanup_logs() { rm -f "$$capture_file" "$$ping_file"; }; \
 	trap cleanup_logs EXIT; \
-	sudo ip netns exec h1 ip link set dev eth1 xdp off >/dev/null 2>&1 || true; \
-	sudo ip netns exec h2 tc qdisc del dev eth1 clsact >/dev/null 2>&1 || true; \
+	sudo ip netns exec h1 ip link set dev eth1 xdpgeneric off >/dev/null 2>&1 || true; \
 	sudo ip netns exec h1 timeout 6 tcpdump -n -l -i eth1 -c 4 icmp 2>&1 | tee "$$capture_file" & capture_pid=$$!; \
 	sleep 1; \
 	if ! sudo ip netns exec h2 ping -c 2 -W 2 "$(H1_LAB_IP)" 2>&1 | tee "$$ping_file"; then \
@@ -177,7 +167,6 @@ test-xdp-baseline: verify-env
 	echo; \
 	echo "PREPARACAO"; \
 	echo "  [OK] XDP esta desativado em h1."; \
-	echo "  [OK] TC esta desativado em h2."; \
 	echo "  [OK] tcpdump observou a interface eth1."; \
 	echo; \
 	echo "ACAO"; \
@@ -204,7 +193,7 @@ test-xdp-baseline: verify-env
 # deixa o ping mostrar explicitamente a perda causada por XDP_DROP.
 test-xdp-filter: verify-env
 	@set -euo pipefail; \
-	sudo ip netns exec h1 ip link set dev eth1 xdp off >/dev/null 2>&1 || true; \
+	sudo ip netns exec h1 ip link set dev eth1 xdpgeneric off >/dev/null 2>&1 || true; \
 	if ! sudo ip netns exec h1 ip link set dev eth1 xdpgeneric obj "$(CURDIR)/xdp.o" sec xdp; then \
 		echo "ERRO: nao foi possivel anexar o programa XDP generico a eth1 de h1."; \
 		echo "O modo generico e usado porque pares veth no WSL podem rejeitar XDP nativo por causa do MTU do peer."; \
@@ -254,6 +243,7 @@ test-tc-baseline: verify-env
 	nc_file=$$(mktemp); \
 	cleanup_logs() { rm -f "$$capture_file" "$$nc_file"; }; \
 	trap cleanup_logs EXIT; \
+	sudo ip netns exec h1 ip link set dev eth1 xdpgeneric off >/dev/null 2>&1 || true; \
 	sudo ip netns exec h2 tc qdisc del dev eth1 clsact >/dev/null 2>&1 || true; \
 	sudo ip netns exec h1 sh -c 'nohup nc -lk -p 80 >/tmp/lab2-nc.log 2>&1 &'; \
 	sleep 1; \
@@ -335,6 +325,26 @@ test-tc-filter: verify-env
 	echo "  [SUCESSO] O TC bloqueou TCP/80 no egress de h2."; \
 	echo "  XDP atuou no ingresso; TC atuou na saida."; \
 	echo
+
+# Encerra somente o experimento XDP, preservando containers e enderecos para
+# que o aluno possa iniciar o experimento TC sem recriar toda a topologia.
+detach-xdp: verify-env
+	@if sudo ip netns exec h1 ip -details link show dev eth1 | grep -q 'prog/xdp'; then \
+		sudo ip netns exec h1 ip link set dev eth1 xdpgeneric off; \
+		echo "XDP desanexado de h1:eth1. O experimento XDP foi encerrado."; \
+	else \
+		echo "XDP ja estava desanexado de h1:eth1."; \
+	fi
+
+# Encerra somente o experimento TC removendo o qdisc clsact e, com ele, o
+# classificador eBPF anexado ao egress de h2.
+detach-tc: verify-env
+	@if sudo ip netns exec h2 tc qdisc show dev eth1 | grep -q clsact; then \
+		sudo ip netns exec h2 tc qdisc del dev eth1 clsact; \
+		echo "TC desanexado de h2:eth1. O experimento TC foi encerrado."; \
+	else \
+		echo "TC ja estava desanexado de h2:eth1."; \
+	fi
 
 # Recupera o ambiente caso uma execucao anterior tenha sido interrompida.
 destroy:

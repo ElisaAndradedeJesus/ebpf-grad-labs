@@ -93,10 +93,11 @@ Essa etapa confirma Clang, Docker, Containerlab, `ip`, `tc` e o Docker daemon.
 ```bash
 make setup
 ```
-
 O Makefile compila os programas, cria os dois containers e configura a rede experimental. Nenhum filtro é anexado e nenhum teste é executado nessa etapa.
 
-### 5. Execute um experimento por vez
+Depois de `make setup`, a topologia permanece ativa durante os experimentos e só é removida quando você executa `make clean`.
+
+## Experimentos
 
 O Lab 2 possui dois experimentos separados. Primeiro estudamos XDP no ingresso de `h1`; depois estudamos TC na saída de `h2`.
 
@@ -104,19 +105,14 @@ O Lab 2 possui dois experimentos separados. Primeiro estudamos XDP no ingresso d
 # Experimento XDP
 make test-xdp-baseline
 make test-xdp-filter
+make detach-xdp
 
 # Experimento TC
 make test-tc-baseline
 make test-tc-filter
+make detach-tc
 ```
 
-Pare depois de cada comando para ler a saída técnica e a explicação final. Se quiser executar os dois experimentos automaticamente, use:
-
-```bash
-make test
-```
-
-A topologia permanece ativa ao final para que você possa inspecioná-la.
 
 ## Experimento 1: XDP no ingresso
 
@@ -154,7 +150,7 @@ Antes de anexar XDP, `h2` envia ICMP para `h1`:
 h2 ── ping ──> h1
 ```
 
-O Makefile inicia `tcpdump` na `eth1` de `h1` e envia dois pings. Primeiro, as saídas técnicas originais de `tcpdump` e `ping` aparecem normalmente. Quando os dois comandos terminam, uma tela separada traduz o resultado e apresenta quantos pedidos e respostas foram observados.
+O Makefile inicia `tcpdump` na `eth1` de `h1` e envia dois pings. As saídas técnicas de `tcpdump` e `ping` são exibidas durante a execução e, quando os comandos terminam, o Makefile apresenta um resumo didático que interpreta os resultados observados.
 
 Essa ordem é intencional: alunos curiosos podem examinar toda a evidência técnica, enquanto a tela final oferece uma explicação acessível sem se misturar aos dados brutos.
 
@@ -171,7 +167,6 @@ OBJETIVO
 
 PREPARACAO
   [OK] XDP esta desativado em h1.
-  [OK] TC esta desativado em h2.
   [OK] tcpdump observou a interface eth1.
 
 ACAO
@@ -217,6 +212,16 @@ SUCESSO: XDP_DROP bloqueou o ICMP no ingresso de h1.
 ```
 
 O ping falhar agora é uma evidência válida porque a mesma comunicação funcionou no teste XDP anterior.
+
+### Encerre o experimento XDP
+
+Depois de observar o bloqueio, desanexe o programa antes de iniciar o experimento TC:
+
+```bash
+make detach-xdp
+```
+
+Esse comando remove somente o XDP de `h1:eth1`. Os containers, os endereços e a topologia permanecem ativos para o experimento seguinte.
 
 ## Experimento 2: TC na saída
 
@@ -280,6 +285,16 @@ Resultado esperado:
 SUCESSO: TC bloqueou TCP/80 no egress de h2.
 ```
 
+### Encerre o experimento TC
+
+Depois de observar os contadores e o bloqueio, remova o classificador TC:
+
+```bash
+make detach-tc
+```
+
+Esse comando remove o `clsact` e o programa eBPF anexado ao egress de `h2:eth1`, mas preserva a topologia até que `make clean` seja executado.
+
 ## Comparando XDP e TC
 
 Os dois experimentos descartam pacotes com programas eBPF, mas fazem isso em locais e momentos diferentes:
@@ -303,7 +318,7 @@ Neste exemplo:
 
 ## Evidências do experimento
 
-A topologia continua ativa depois de cada etapa. Em outro terminal, você também pode inspecionar:
+A topologia continua ativa depois de cada teste. Em outro terminal, você também pode inspecionar:
 
 ```bash
 sudo ip netns exec h1 ip -details link show dev eth1
@@ -351,38 +366,48 @@ make check
 ```bash
 make clean
 make setup
-make test
+make test-xdp-baseline
 ```
 
 ### Falha durante a instalação de pacotes nos containers
 
 Confirme o acesso à internet e tente novamente. Na primeira execução, os containers instalam `iproute2`, `iputils-ping`, `netcat-openbsd` e `tcpdump`.
 
-### XDP não pode ser anexado
+### Falha ao anexar o programa XDP
 
-Se uma versão antiga do Makefile apresentar a mensagem abaixo:
-
-```text
-Error: veth: Peer MTU is too large to set XDP.
-```
-
-ela tentou usar XDP nativo em uma interface `veth`. Atualize o repositório e repita o teste; o Makefile atual utiliza XDP genérico:
+Primeiro, remova qualquer programa XDP que tenha permanecido anexado e repita o teste:
 
 ```bash
-git pull
+make detach-xdp
+make test-xdp-filter
+```
+
+Se a falha continuar, confira se o kernel oferece o tipo de programa XDP:
+
+```bash
+sudo bpftool feature probe kernel | grep -i -A 8 xdp
+```
+
+Confira também o estado da interface virtual:
+
+```bash
+sudo ip netns exec h1 ip -details link show dev eth1
+```
+
+Se o kernel WSL estiver desatualizado, execute no PowerShell do Windows:
+
+```powershell
+wsl --update
+wsl --shutdown
+```
+
+Abra novamente o Ubuntu, inicie o Docker e recrie o laboratório:
+
+```bash
+sudo service docker start
+cd ~/ebpf-grad-labs/Lab2-XDP_vs_TC
 make clean
 make setup
-make test
-```
-
-Se a anexção genérica também falhar, confira a mensagem exibida imediatamente antes do `Error 2` e verifique as capacidades do kernel:
-
-```bash
-sudo bpftool feature probe kernel
-```
-
-Depois limpe a topologia:
-
-```bash
-make clean
+make test-xdp-baseline
+make test-xdp-filter
 ```
