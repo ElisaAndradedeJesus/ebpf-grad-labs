@@ -366,7 +366,6 @@ make check
 ```bash
 make clean
 make setup
-make test-xdp-baseline
 ```
 
 ### Falha durante a instalação de pacotes nos containers

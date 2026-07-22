@@ -1,3 +1,15 @@
+<!--
+TODO depois da validacao atual do laboratorio:
+
+- Remover a limpeza automatica executada ao encerrar `make test`. O teste deve
+  apenas encerrar/desanexar os programas necessarios, preservando os arquivos
+  gerados por `make setup` para que possa ser repetido sem recompilar tudo.
+- Deixar a remocao completa do ambiente exclusivamente sob responsabilidade de
+  `make clean`.
+- Acrescentar, ao final deste tutorial, uma etapa explicando quando executar
+  `make clean`, o que sera removido e como confirmar que a limpeza funcionou.
+-->
+
 # Lab 1: Kprobe e BPF LSM na prática
 
 Neste laboratório, vamos comparar dois usos de eBPF relacionados ao comportamento do sistema operacional:
