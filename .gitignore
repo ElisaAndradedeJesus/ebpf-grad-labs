@@ -1,0 +1,5 @@
+# Artefatos gerados pela compilacao dos programas eBPF.
+*.o
+
+# Header gerado a partir do BTF do kernel pelo Lab 1.
+vmlinux.h
