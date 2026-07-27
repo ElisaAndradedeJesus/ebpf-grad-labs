@@ -167,19 +167,19 @@ test-baseline: verify-env
 	@set -euo pipefail; \
 	sudo ip netns exec h1 ip link set dev eth1 xdpgeneric off >/dev/null 2>&1 || true; \
 	rm -f "$(MAP_ID_FILE)"; \
-	echo "SAIDA TECNICA - ENDERECO QUE SERA BLOQUEADO (10.0.1.2)"; \
+	echo "ENDERECO QUE SERA BLOQUEADO (10.0.1.2)"; \
 	echo "------------------------------------------------------------"; \
 	sudo ip netns exec h2 ping -I 10.0.1.2 -c 2 -W 2 10.0.1.1 || { \
 		echo "ERRO: 10.0.1.2 nao alcancou h1 sem XDP."; \
 		echo "Execute make setup novamente e confira as mensagens da topologia."; exit 1; }; \
 	echo; \
-	echo "SAIDA TECNICA - ENDERECO DE CONTROLE (10.0.1.3)"; \
+	echo "ENDERECO DE CONTROLE (10.0.1.3)"; \
 	echo "------------------------------------------------------------"; \
 	sudo ip netns exec h2 ping -I 10.0.1.3 -c 2 -W 2 10.0.1.1 || { \
 		echo "ERRO: 10.0.1.3 nao alcancou h1 sem XDP."; exit 1; }; \
 	echo; \
 	echo "============================================================"; \
-	echo " LINHA DE BASE - Os dois enderecos passam sem o firewall"; \
+	echo "Os dois enderecos passam sem o firewall"; \
 	echo "============================================================"; \
 	echo; \
 	echo "OBJETIVO"; \
@@ -214,15 +214,15 @@ test-empty-map: verify-env
 		echo "ERRO: XDP foi anexado, mas o map blacklist nao foi localizado."; \
 		echo "Inspecione com: sudo bpftool map list"; exit 1; }; \
 	echo "$$MAP_ID" > "$(MAP_ID_FILE)"; \
-	echo "SAIDA TECNICA - INTERFACE COM XDP"; \
+	echo "INTERFACE COM XDP"; \
 	echo "------------------------------------------------------------"; \
 	sudo ip netns exec h1 ip -details link show dev eth1; \
 	echo; \
-	echo "SAIDA TECNICA - BLACKLIST VAZIA"; \
+	echo "BLACKLIST VAZIA"; \
 	echo "------------------------------------------------------------"; \
 	sudo bpftool map dump id "$$MAP_ID"; \
 	echo; \
-	echo "SAIDA TECNICA - PING COM MAP VAZIO"; \
+	echo "PING COM MAP VAZIO"; \
 	echo "------------------------------------------------------------"; \
 	sudo ip netns exec h2 ping -I 10.0.1.2 -c 2 -W 2 10.0.1.1 || { \
 		echo "ERRO: o ping falhou mesmo com a blacklist vazia."; \
@@ -256,17 +256,17 @@ test-block: verify-env
 		echo "ERRO: o map registrado nao existe mais; o XDP pode ter sido desanexado."; \
 		echo "Execute novamente: make test-empty-map"; exit 1; }; \
 	sudo bpftool map update id "$$MAP_ID" key hex 0a 00 01 02 value hex 01 00 00 00; \
-	echo "SAIDA TECNICA - BLACKLIST APOS A INSERCAO"; \
+	echo "BLACKLIST APOS A INSERCAO"; \
 	echo "------------------------------------------------------------"; \
 	sudo bpftool map dump id "$$MAP_ID"; \
 	echo; \
-	echo "SAIDA TECNICA - 10.0.1.2 DEVE SER BLOQUEADO"; \
+	echo "10.0.1.2 DEVE SER BLOQUEADO"; \
 	echo "------------------------------------------------------------"; \
 	if sudo ip netns exec h2 ping -I 10.0.1.2 -c 2 -W 2 10.0.1.1; then \
 		echo "ERRO: 10.0.1.2 respondeu mesmo estando na blacklist."; exit 1; \
 	else true; fi; \
 	echo; \
-	echo "SAIDA TECNICA - 10.0.1.3 DEVE CONTINUAR PERMITIDO"; \
+	echo "10.0.1.3 DEVE CONTINUAR PERMITIDO"; \
 	echo "------------------------------------------------------------"; \
 	sudo ip netns exec h2 ping -I 10.0.1.3 -c 2 -W 2 10.0.1.1 || { \
 		echo "ERRO: o endereco de controle tambem foi bloqueado."; exit 1; }; \
@@ -298,11 +298,11 @@ test-unblock: verify-env
 	sudo bpftool map delete id "$$MAP_ID" key hex 0a 00 01 02 || { \
 		echo "ERRO: 10.0.1.2 nao estava na blacklist."; \
 		echo "Execute primeiro: make test-block"; exit 1; }; \
-	echo "SAIDA TECNICA - BLACKLIST APOS A REMOCAO"; \
+	echo "BLACKLIST APOS A REMOCAO"; \
 	echo "------------------------------------------------------------"; \
 	sudo bpftool map dump id "$$MAP_ID"; \
 	echo; \
-	echo "SAIDA TECNICA - 10.0.1.2 LIBERADO"; \
+	echo "10.0.1.2 LIBERADO"; \
 	echo "------------------------------------------------------------"; \
 	sudo ip netns exec h2 ping -I 10.0.1.2 -c 2 -W 2 10.0.1.1 || { \
 		echo "ERRO: 10.0.1.2 continuou sem resposta depois de ser removido do Map."; \

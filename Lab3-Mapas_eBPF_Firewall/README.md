@@ -149,6 +149,34 @@ Depois da atualização, dois fluxos atravessam o mesmo XDP:
 
 O ping com origem `10.0.1.2` deve falhar, enquanto o ping com origem `10.0.1.3` deve continuar funcionando. Essa comparação demonstra que o bloqueio é seletivo e foi provocado pelo conteúdo do Map.
 
+Para `10.0.1.2`, a saída técnica deve mostrar que os dois pacotes foram
+enviados, mas nenhuma resposta chegou:
+
+```text
+10.0.1.2 DEVE SER BLOQUEADO
+------------------------------------------------------------
+PING 10.0.1.1 (10.0.1.1) from 10.0.1.2 : 56(84) bytes of data.
+
+--- 10.0.1.1 ping statistics ---
+2 packets transmitted, 0 received, 100% packet loss
+```
+
+Logo depois, o teste com origem `10.0.1.3` deve exibir respostas de `h1` e
+terminar sem perda:
+
+```text
+10.0.1.3 DEVE CONTINUAR PERMITIDO
+------------------------------------------------------------
+64 bytes from 10.0.1.1: icmp_seq=1 ttl=64 time=...
+64 bytes from 10.0.1.1: icmp_seq=2 ttl=64 time=...
+
+--- 10.0.1.1 ping statistics ---
+2 packets transmitted, 2 received, 0% packet loss
+```
+
+Os tempos e alguns detalhes da saída podem variar. As evidências importantes
+são `100% packet loss` para `10.0.1.2` e `0% packet loss` para `10.0.1.3`.
+
 ### Experimento 4: remover a origem da blacklist
 
 ```bash
