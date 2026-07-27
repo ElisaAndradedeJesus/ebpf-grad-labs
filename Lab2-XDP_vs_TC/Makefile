@@ -108,9 +108,11 @@ setup: build
 # variaveis. Antes do deploy, verifica h1 e h2 e preserva qualquer topologia
 # anterior, orientando make clean em vez de remove-la automaticamente.
 #
-# Depois cria a topologia, obtem os PIDs dos containers, expoe seus namespaces
-# em /var/run/netns e configura a rede exclusiva 10.10.12.0/24 em eth1. Se uma
-# etapa posterior ao deploy falhar, cleanup remove a implantacao incompleta.
+# Depois usa --reconfigure para descartar apenas artefatos de uma implantacao
+# antiga que nao possui mais containers. Em seguida cria a topologia, obtem os
+# PIDs, expoe os namespaces em /var/run/netns e configura 10.10.12.0/24 em
+# eth1. Se uma etapa posterior ao deploy falhar, cleanup remove a implantacao
+# incompleta.
 	@set -Eeuo pipefail; \
 	existing_containers=""; \
 	for container in "$(H1_CONTAINER)" "$(H2_CONTAINER)"; do \
@@ -138,7 +140,7 @@ setup: build
 	}; \
 	trap cleanup INT TERM; \
 	trap on_error ERR; \
-	sudo containerlab deploy -t topology.yml; \
+	sudo containerlab deploy -t topology.yml --reconfigure; \
 	H1_PID=$$(sudo docker inspect -f '{{.State.Pid}}' "$(H1_CONTAINER)"); \
 	H2_PID=$$(sudo docker inspect -f '{{.State.Pid}}' "$(H2_CONTAINER)"); \
 	sudo mkdir -p /var/run/netns; \

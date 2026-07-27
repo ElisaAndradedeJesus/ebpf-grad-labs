@@ -97,10 +97,12 @@ setup: build
 # variaveis. Primeiro protege uma topologia anterior: se h1 ou h2 ja existirem,
 # apenas informa os nomes e pede make clean, sem destruir o ambiente existente.
 #
-# Depois do deploy, obtem o PID de cada container e cria os atalhos em
-# /var/run/netns usados por ip netns. Por fim, configura os dois enderecos de
-# origem em h2 e o endereco de destino em h1. Se uma dessas etapas falhar,
-# on_error remove somente a implantacao parcial iniciada por esta receita.
+# Depois usa --reconfigure para descartar apenas artefatos de uma implantacao
+# antiga que nao possui mais containers. Com o novo deploy, obtem o PID de cada
+# container e cria os atalhos em /var/run/netns usados por ip netns. Por fim,
+# configura os dois enderecos de origem em h2 e o endereco de destino em h1. Se
+# uma dessas etapas falhar, on_error remove somente a implantacao parcial
+# iniciada por esta receita.
 	@set -Eeuo pipefail; \
 	existing_containers=""; \
 	for container in "$(H1_CONTAINER)" "$(H2_CONTAINER)"; do \
@@ -128,7 +130,7 @@ setup: build
 	}; \
 	trap cleanup INT TERM; \
 	trap on_error ERR; \
-	sudo containerlab deploy -t topology.yml; \
+	sudo containerlab deploy -t topology.yml --reconfigure; \
 	H1_PID=$$(sudo docker inspect -f '{{.State.Pid}}' "$(H1_CONTAINER)"); \
 	H2_PID=$$(sudo docker inspect -f '{{.State.Pid}}' "$(H2_CONTAINER)"); \
 	sudo mkdir -p /var/run/netns; \
