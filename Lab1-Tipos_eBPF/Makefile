@@ -18,7 +18,9 @@ PIN_ROOT := /sys/fs/bpf/ebpf_lab1
 
 # Exibe os comandos disponiveis sem preparar ou modificar o ambiente.
 help:
+# Identifica o laboratorio antes de apresentar sua interface publica.
 	@echo "Lab 1 - Kprobe e BPF LSM"
+# Documenta os alvos que o aluno pode executar e a responsabilidade de cada um.
 	@echo "  make check   verifica as dependencias do laboratorio"
 	@echo "  make mounts  prepara bpffs e securityfs"
 	@echo "  make build   gera vmlinux.h e compila os programas"
@@ -31,27 +33,37 @@ help:
 # A ultima verificacao confirma a disponibilidade do BTF do kernel, necessario
 # para gerar o header vmlinux.h utilizado pelo programa BPF LSM.
 check:
+# Confirma o Clang, que transforma os dois programas C em bytecode eBPF.
 	@command -v clang >/dev/null || { \
 		echo "ERRO: Clang nao foi encontrado; sem ele os programas eBPF nao podem ser compilados."; \
 		echo "Instale com: sudo apt update && sudo apt install -y clang llvm"; \
 		echo "Depois, execute novamente: make check"; exit 1; }
+# Confirma o GCC, usado apenas para descobrir o diretorio dos headers da
+# arquitetura por meio de gcc -print-multiarch.
 	@command -v gcc >/dev/null || { \
 		echo "ERRO: GCC nao foi encontrado; ele e usado para descobrir os headers da arquitetura."; \
 		echo "Instale com: sudo apt install -y build-essential"; \
 		echo "Depois, execute novamente: make check"; exit 1; }
+# Confirma o bpftool, necessario tanto para gerar vmlinux.h quanto para carregar
+# e anexar os programas ao kernel.
 	@command -v bpftool >/dev/null || { \
 		echo "ERRO: bpftool nao foi encontrado; ele e necessario para gerar vmlinux.h e carregar eBPF."; \
 		echo "Instale com: sudo apt install -y bpftool"; \
 		echo "Consulte tambem a preparacao do ambiente no README principal."; exit 1; }
+# Confirma o mountpoint, usado para evitar montagens duplicadas de bpffs e
+# securityfs.
 	@command -v mountpoint >/dev/null || { \
 		echo "ERRO: mountpoint nao foi encontrado; nao e possivel verificar bpffs e securityfs."; \
 		echo "Instale com: sudo apt install -y util-linux"; \
 		echo "Depois, execute novamente: make check"; exit 1; }
+# Verifica o BTF exposto pelo kernel. Sem ele nao e possivel gerar o vmlinux.h
+# que descreve os tipos usados pelo programa BPF LSM.
 	@test -r /sys/kernel/btf/vmlinux || { \
 		echo "ERRO: /sys/kernel/btf/vmlinux nao esta disponivel."; \
 		echo "No PowerShell, execute 'wsl --update' e depois 'wsl --shutdown'."; \
 		exit 1; \
 	}
+# Informa sucesso somente depois que ferramentas e BTF foram encontrados.
 	@echo "Dependencias basicas do Lab 1 encontradas."
 
 # Prepara os dois filesystems virtuais usados pelo laboratorio:
@@ -64,11 +76,15 @@ check:
 # A falha de securityfs gera apenas um aviso porque o Kprobe pode funcionar sem
 # ele; nesse caso, somente o teste opcional do BPF LSM fica indisponivel.
 mounts:
+# Monta bpffs somente quando necessario. Esse filesystem permite fixar os
+# programas e links eBPF para mante-los referenciados durante o experimento.
 	@if ! mountpoint -q /sys/fs/bpf; then \
 		echo "Preparando o BPF filesystem em /sys/fs/bpf..."; \
 		sudo mkdir -p /sys/fs/bpf; \
 		sudo mount -t bpf bpf /sys/fs/bpf; \
 	fi
+# Monta securityfs somente quando necessario. A falha gera aviso, e nao erro,
+# porque o Kprobe ainda funciona mesmo sem a verificacao opcional do BPF LSM.
 	@if ! mountpoint -q /sys/kernel/security; then \
 		echo "Preparando o securityfs em /sys/kernel/security..."; \
 		sudo mkdir -p /sys/kernel/security; \
@@ -84,24 +100,33 @@ mounts:
 # -D__TARGET_ARCH_x86 informa a arquitetura esperada pelas macros da libbpf.
 # -O2 gera codigo adequado ao verifier e -g inclui informacoes BTF de depuracao.
 build: check
+# Sinaliza o inicio da geracao dos arquivos para separar essa etapa de check.
 	@echo "Gerando vmlinux.h e compilando os programas..."
+# Converte o BTF do kernel em declaracoes C usadas para compilar com CO-RE.
 	@bpftool btf dump file /sys/kernel/btf/vmlinux format c > vmlinux.h
+# Compila o Kprobe para bytecode eBPF. O include de arquitetura resolve headers
+# como asm/types.h, e -O2 produz codigo adequado ao verifier.
 	@clang -O2 -g -target bpf -D__TARGET_ARCH_x86 \
 		-I"$(ARCH_INCLUDE)" \
 		-c kprobe_exec.bpf.c -o kprobe_exec.bpf.o || { \
 			echo "ERRO: falha ao compilar kprobe_exec.bpf.c."; \
 			echo "Leia o diagnostico do Clang acima e confirme os pacotes clang, libbpf-dev e headers."; \
 			exit 1; }
+# Compila o BPF LSM incluindo o diretorio atual, onde vmlinux.h acabou de ser
+# gerado, alem dos headers especificos da arquitetura.
 	@clang -O2 -g -target bpf -D__TARGET_ARCH_x86 \
 		-I"$(CURDIR)" -I"$(ARCH_INCLUDE)" \
 		-c lsm_block.bpf.c -o lsm_block.bpf.o || { \
 			echo "ERRO: falha ao compilar lsm_block.bpf.c."; \
 			echo "Leia o diagnostico do Clang acima e confirme se vmlinux.h foi gerado corretamente."; \
 			exit 1; }
+# Confirma que os dois objetos foram gerados sem esconder erros do Clang.
 	@echo "Programas eBPF compilados."
 
 # Prepara todos os recursos necessarios sem carregar os programas no kernel.
 setup: check mounts build
+# Orienta a proxima etapa apenas depois que dependencias, filesystems e objetos
+# estiverem prontos.
 	@echo "Ambiente do Lab 1 preparado. Execute: make test"
 
 # Executa o experimento sobre os objetos produzidos anteriormente por setup.
@@ -120,9 +145,15 @@ setup: check mounts build
 # curl --version funciona como teste: o retorno do programa eBPF deve negar a
 # execucao. Se BPF LSM nao estiver ativo, o Kprobe continua sendo testavel.
 test:
+# Impede o carregamento quando setup ainda nao produziu os dois objetos.
 	@test -f kprobe_exec.bpf.o -a -f lsm_block.bpf.o || { \
 		echo "ERRO: os programas do Lab 1 ainda nao foram preparados."; \
 		echo "Execute primeiro: make setup"; exit 1; }
+# Mantem todo o experimento no mesmo shell para compartilhar funcoes e traps.
+# O Kprobe e carregado com autoattach e permanece ativo enquanto o aluno observa
+# trace_pipe em outro terminal. O BPF LSM so e carregado quando o kernel anuncia
+# esse modulo; nesse caso, curl valida se a politica realmente bloqueia execve.
+# Ao encerrar ou falhar, cleanup remove os pins e os artefatos gerados.
 	@set -Eeuo pipefail; \
 	cleanup() { \
 		sudo rm -rf "$(PIN_ROOT)" || true; \
@@ -163,6 +194,10 @@ test:
 # Permite recuperar o ambiente manualmente se uma execucao anterior tiver sido
 # interrompida. Remove os pins do kernel e os artefatos locais de compilacao.
 clean:
+# Remove os pins do bpffs para liberar programas e links que ainda estejam
+# referenciados pelo kernel.
 	@sudo rm -rf "$(PIN_ROOT)"
+# Apaga somente os artefatos gerados localmente, preservando fontes e Makefile.
 	@rm -f kprobe_exec.bpf.o lsm_block.bpf.o vmlinux.h
+# Confirma a limpeza somente se as duas etapas anteriores terminaram.
 	@echo "Programas e arquivos gerados pelo Lab 1 removidos."

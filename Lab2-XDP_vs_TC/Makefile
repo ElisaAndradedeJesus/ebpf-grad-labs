@@ -22,7 +22,9 @@ LAB_PREFIX := 24
 
 # Mostra a interface publica do laboratorio.
 help:
+# Identifica o laboratorio antes de apresentar os alvos disponiveis.
 	@echo "Lab 2 - XDP vs. TC"
+# Documenta os comandos que o aluno pode executar sem modificar o ambiente.
 	@echo "  make check    verifica as dependencias"
 	@echo "  make build    compila os programas eBPF"
 	@echo "  make setup    compila e monta a topologia"
@@ -37,56 +39,91 @@ help:
 
 # Verifica ferramentas do host antes de criar containers ou alterar a rede.
 check:
+# Confirma o Clang, que compila os programas XDP e TC para bytecode eBPF.
 	@command -v clang >/dev/null || { \
 		echo "ERRO: Clang nao foi encontrado; sem ele XDP e TC nao podem ser compilados."; \
 		echo "Instale com: sudo apt update && sudo apt install -y clang llvm"; \
 		echo "Depois, execute novamente: make check"; exit 1; }
+# Confirma o GCC, usado para localizar os headers especificos da arquitetura.
 	@command -v gcc >/dev/null || { \
 		echo "ERRO: GCC nao foi encontrado; ele e usado para localizar os headers da arquitetura."; \
 		echo "Instale com: sudo apt install -y build-essential"; \
 		echo "Depois, execute novamente: make check"; exit 1; }
+# Confirma o cliente Docker, pois o Containerlab cria h1 e h2 como containers.
 	@command -v docker >/dev/null || { \
 		echo "ERRO: Docker nao foi encontrado; o Containerlab depende dele para criar os hosts."; \
 		echo "Volte ao README principal e conclua a secao 'Instalar e testar o Docker'."; \
 		echo "Instalacao usada pelo curso:"; \
 		echo "  curl -fsSL https://get.docker.com -o get-docker.sh"; \
 		echo "  sudo sh get-docker.sh"; exit 1; }
+# Confirma o Containerlab, responsavel por interpretar topology.yml e criar o
+# enlace virtual do experimento.
 	@command -v containerlab >/dev/null || { \
 		echo "ERRO: Containerlab nao foi encontrado; a topologia h1--h2 nao pode ser criada."; \
 		echo "Volte ao README principal e conclua a secao 'Instalar e testar o Containerlab'."; \
 		echo "Instale com: bash -c \"\$$(curl -sL https://get.containerlab.dev)\""; \
 		echo "Depois, confirme com: containerlab version"; exit 1; }
+# Confirma o comando ip, necessario para configurar namespaces, enderecos e XDP.
 	@command -v ip >/dev/null || { \
 		echo "ERRO: o comando ip nao foi encontrado; os namespaces nao podem ser configurados."; \
 		echo "Instale com: sudo apt install -y iproute2"; exit 1; }
+# Confirma o comando tc, usado para criar o qdisc clsact e anexar o classificador
+# eBPF ao egress de h2.
 	@command -v tc >/dev/null || { \
 		echo "ERRO: o comando tc nao foi encontrado; o filtro TC egress nao pode ser anexado."; \
 		echo "Instale com: sudo apt install -y iproute2"; exit 1; }
+# Consulta o daemon Docker de verdade, pois a presenca do cliente nao garante
+# que o servico capaz de criar containers esteja ativo.
 	@sudo docker info >/dev/null 2>&1 || { \
 		echo "ERRO: Docker esta instalado, mas o daemon nao esta em execucao ou nao respondeu."; \
 		echo "Inicie com: sudo service docker start"; \
 		echo "Teste com: sudo docker info"; \
 		echo "Se continuar falhando, consulte 'Docker daemon nao esta rodando' no README principal."; exit 1; }
+# Informa sucesso somente depois que todas as verificacoes passaram.
 	@echo "Dependencias basicas do Lab 2 encontradas."
 
 # Compila um programa XDP e um classificador TC para bytecode eBPF.
 # -O2 facilita a verificacao pelo verifier e -target bpf seleciona o backend BPF.
 build: check
+# Separa visualmente a compilacao das verificacoes realizadas por check.
 	@echo "Compilando os programas XDP e TC..."
+# Compila o filtro de ICMP para xdp.o, usando otimizacao adequada ao verifier e
+# os headers da arquitetura atual.
 	@clang -O2 -g -target bpf -D__TARGET_ARCH_x86 -I"$(ARCH_INCLUDE)" \
 		-c xdp_drop_icmp.bpf.c -o xdp.o || { \
 			echo "ERRO: falha ao compilar o programa XDP."; \
 			echo "Leia o diagnostico do Clang acima e confirme clang, libbpf-dev e os headers."; exit 1; }
+# Compila o classificador de TCP/80 para tc.o com os mesmos requisitos eBPF.
 	@clang -O2 -g -target bpf -D__TARGET_ARCH_x86 -I"$(ARCH_INCLUDE)" \
 		-c tc_egress_drop.bpf.c -o tc.o || { \
 			echo "ERRO: falha ao compilar o programa TC."; \
 			echo "Leia o diagnostico do Clang acima e confirme clang, libbpf-dev e os headers."; exit 1; }
+# Confirma que os dois objetos foram produzidos sem esconder erros do Clang.
 	@echo "Programas eBPF compilados."
 
 # Monta a topologia e configura apenas o ambiente. Nenhum teste e executado e
 # nenhum programa eBPF e anexado nesta etapa.
 setup: build
+# Executa a preparacao em um unico shell para compartilhar funcoes, traps e
+# variaveis. Antes do deploy, verifica h1 e h2 e preserva qualquer topologia
+# anterior, orientando make clean em vez de remove-la automaticamente.
+#
+# Depois cria a topologia, obtem os PIDs dos containers, expoe seus namespaces
+# em /var/run/netns e configura a rede exclusiva 10.10.12.0/24 em eth1. Se uma
+# etapa posterior ao deploy falhar, cleanup remove a implantacao incompleta.
 	@set -Eeuo pipefail; \
+	existing_containers=""; \
+	for container in "$(H1_CONTAINER)" "$(H2_CONTAINER)"; do \
+		if sudo docker inspect "$$container" >/dev/null 2>&1; then \
+			existing_containers="$$existing_containers $$container"; \
+		fi; \
+	done; \
+	if [ -n "$$existing_containers" ]; then \
+		echo "AVISO: ja existem containers de uma topologia anterior do Lab 2:"; \
+		for container in $$existing_containers; do echo "  $$container"; done; \
+		echo "Se nao quiser manter esse laboratorio, execute primeiro: make clean"; \
+		exit 1; \
+	fi; \
 	cleanup() { \
 		sudo containerlab destroy -t topology.yml --cleanup >/dev/null 2>&1 || true; \
 		sudo rm -f /var/run/netns/h1 /var/run/netns/h2; \
@@ -101,7 +138,6 @@ setup: build
 	}; \
 	trap cleanup INT TERM; \
 	trap on_error ERR; \
-	sudo containerlab destroy -t topology.yml --cleanup >/dev/null 2>&1 || true; \
 	sudo containerlab deploy -t topology.yml; \
 	H1_PID=$$(sudo docker inspect -f '{{.State.Pid}}' "$(H1_CONTAINER)"); \
 	H2_PID=$$(sudo docker inspect -f '{{.State.Pid}}' "$(H2_CONTAINER)"); \
@@ -119,9 +155,12 @@ setup: build
 # Verificacao compartilhada pelos quatro testes. Em vez de apenas examinar os
 # links de /var/run/netns, executa um comando real dentro de cada namespace.
 verify-env:
+# Verifica os dois objetos locais antes de permitir qualquer teste.
 	@test -f xdp.o -a -f tc.o || { \
 		echo "ERRO: os programas eBPF do Lab 2 nao foram compilados."; \
 		echo "Execute primeiro: make setup"; exit 1; }
+# Executa um comando neutro dentro dos namespaces para confirmar que os links
+# apontam para containers ativos, e nao apenas para caminhos antigos.
 	@sudo ip netns exec h1 true >/dev/null 2>&1 && \
 	 sudo ip netns exec h2 true >/dev/null 2>&1 || { \
 		echo "ERRO: os namespaces h1 e h2 nao estao acessiveis."; \
@@ -130,6 +169,10 @@ verify-env:
 # Etapa 1: prova visualmente que a rede funciona antes do XDP. tcpdump observa
 # na eth1 de h1 a requisicao e a resposta ICMP mostradas tambem pelo ping.
 test-xdp-baseline: verify-env
+# Cria arquivos temporarios para preservar as saidas completas de ping e
+# tcpdump, remove qualquer XDP anterior e captura os quatro pacotes esperados.
+# A contagem de pedidos e respostas comprova que a rede funciona antes do
+# filtro; os arquivos temporarios sao removidos automaticamente ao sair.
 	@set -euo pipefail; \
 	capture_file=$$(mktemp); \
 	ping_file=$$(mktemp); \
@@ -192,6 +235,9 @@ test-xdp-baseline: verify-env
 # Etapa 2: anexa XDP generico ao ingresso de h1, exibe os detalhes do link e
 # deixa o ping mostrar explicitamente a perda causada por XDP_DROP.
 test-xdp-filter: verify-env
+# Garante uma anexacao nova em modo generico, mostra o programa na interface e
+# repete o ping. Agora a falha do ping e o resultado esperado: se ele responder,
+# o alvo interrompe porque XDP_DROP nao produziu o bloqueio estudado.
 	@set -euo pipefail; \
 	sudo ip netns exec h1 ip link set dev eth1 xdpgeneric off >/dev/null 2>&1 || true; \
 	if ! sudo ip netns exec h1 ip link set dev eth1 xdpgeneric obj "$(CURDIR)/xdp.o" sec xdp; then \
@@ -238,6 +284,9 @@ test-xdp-filter: verify-env
 # Etapa 3: inicia o servidor e captura a negociacao TCP em h1. A saida verbose
 # do Netcat e os pacotes do tcpdump formam a linha de base antes do TC.
 test-tc-baseline: verify-env
+# Remove filtros XDP e TC que poderiam contaminar a linha de base, inicia o
+# servidor Netcat em h1 e captura a negociacao TCP/80. A conexao precisa
+# funcionar para atribuir ao TC qualquer bloqueio observado na etapa seguinte.
 	@set -euo pipefail; \
 	capture_file=$$(mktemp); \
 	nc_file=$$(mktemp); \
@@ -285,6 +334,9 @@ test-tc-baseline: verify-env
 # Etapa 4: anexa o classificador ao egress de h2. A conexao deve expirar e
 # tc -s mostra o programa e os contadores de pacotes processados pelo hook.
 test-tc-filter: verify-env
+# Mantem o servidor ativo, cria o qdisc clsact e anexa tc.o ao egress de h2.
+# A tentativa TCP/80 deve falhar; em seguida, tc -s mostra o classificador e
+# seus contadores como evidencia de que o pacote atravessou o hook.
 	@set -euo pipefail; \
 	sudo ip netns exec h1 sh -c 'nohup nc -lk -p 80 >/tmp/lab2-nc.log 2>&1 &' || true; \
 	sudo ip netns exec h2 tc qdisc replace dev eth1 clsact; \
@@ -329,6 +381,8 @@ test-tc-filter: verify-env
 # Encerra somente o experimento XDP, preservando containers e enderecos para
 # que o aluno possa iniciar o experimento TC sem recriar toda a topologia.
 detach-xdp: verify-env
+# Consulta primeiro os detalhes da interface para distinguir entre remover o
+# programa atual e informar que ele ja estava ausente.
 	@if sudo ip netns exec h1 ip -details link show dev eth1 | grep -q 'prog/xdp'; then \
 		sudo ip netns exec h1 ip link set dev eth1 xdpgeneric off; \
 		echo "XDP desanexado de h1:eth1. O experimento XDP foi encerrado."; \
@@ -339,6 +393,8 @@ detach-xdp: verify-env
 # Encerra somente o experimento TC removendo o qdisc clsact e, com ele, o
 # classificador eBPF anexado ao egress de h2.
 detach-tc: verify-env
+# Procura o qdisc clsact antes de remove-lo, evitando tratar como erro o estado
+# em que o classificador TC ja esta desanexado.
 	@if sudo ip netns exec h2 tc qdisc show dev eth1 | grep -q clsact; then \
 		sudo ip netns exec h2 tc qdisc del dev eth1 clsact; \
 		echo "TC desanexado de h2:eth1. O experimento TC foi encerrado."; \
@@ -347,10 +403,33 @@ detach-tc: verify-env
 	fi
 
 # Recupera o ambiente caso uma execucao anterior tenha sido interrompida.
+# Depois do Containerlab, verifica h1 e h2 individualmente com docker inspect.
+# Uma falha do destroy so e tolerada quando nenhum container permanece; caso
+# contrario, orienta o aluno e interrompe antes de anunciar sucesso.
 destroy:
-	@sudo containerlab destroy -t topology.yml --cleanup || true
-	@sudo rm -f /var/run/netns/h1 /var/run/netns/h2
+	@set -u; \
+	sudo containerlab destroy -t topology.yml --cleanup || true; \
+	remaining_containers=""; \
+	for container in "$(H1_CONTAINER)" "$(H2_CONTAINER)"; do \
+		if sudo docker inspect "$$container" >/dev/null 2>&1; then \
+			remaining_containers="$$remaining_containers $$container"; \
+		fi; \
+	done; \
+	if [ -n "$$remaining_containers" ]; then \
+		echo "ERRO: nao foi possivel remover completamente o Lab 2."; \
+		echo "Os seguintes containers ainda existem:"; \
+		for container in $$remaining_containers; do echo "  $$container"; done; \
+		echo "Execute novamente:"; \
+		echo "  sudo containerlab destroy -t topology.yml --cleanup"; \
+		echo "Depois confira:"; \
+		echo "  sudo docker ps -a --filter name=clab-ebpf-lab2"; \
+		exit 1; \
+	fi; \
+	sudo rm -f /var/run/netns/h1 /var/run/netns/h2
 
 clean: destroy
+# Remove os objetos somente depois que destroy confirmou o fim da topologia.
 	@rm -f xdp.o tc.o
+# Esta mensagem so aparece quando containers, namespaces e objetos foram
+# removidos com sucesso.
 	@echo "Topologia e objetos do Lab 2 removidos."
