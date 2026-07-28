@@ -208,7 +208,7 @@ O comando `ip -details link` mostra `prog/xdp` na interface. Em seguida, a saíd
 Resultado esperado:
 
 ```text
-SUCESSO: XDP_DROP bloqueou o ICMP no ingresso de h1.
+[SUCESSO] O XDP bloqueou ICMP no ingresso de h1.
 ```
 
 O ping falhar agora é uma evidência válida porque a mesma comunicação funcionou no teste XDP anterior.
@@ -262,7 +262,7 @@ Connection to 10.10.12.1 80 port [tcp/http] succeeded!
 Resultado esperado:
 
 ```text
-SUCESSO: Netcat e tcpdump comprovam que TCP/80 funcionou sem TC.
+[SUCESSO] TCP/80 funciona normalmente sem o filtro TC.
 ```
 
 Essa linha de base prova que o servidor, a porta e o caminho de rede funcionam antes do filtro TC.
@@ -282,7 +282,7 @@ O Makefile mostra primeiro o filtro anexado. A tentativa de conexão deve expira
 Resultado esperado:
 
 ```text
-SUCESSO: TC bloqueou TCP/80 no egress de h2.
+[SUCESSO] O TC bloqueou TCP/80 no egress de h2.
 ```
 
 ### Encerre o experimento TC

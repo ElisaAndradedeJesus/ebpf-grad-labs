@@ -1,12 +1,12 @@
 # 🚀 Laboratórios Práticos de eBPF: Programação Nativa no Kernel Linux
 
-Bem-vindos à disciplina prática de **eBPF (Extended Berkeley Packet Filter)**. Este repositório contém laboratórios progressivos focados em explorar a fundo como interceptar e programar o Kernel Linux, utilizando ambientes isolados com o **Containerlab**.
+Bem-vindos à disciplina prática de **eBPF (Extended Berkeley Packet Filter)**. Este repositório contém laboratórios progressivos sobre observabilidade, segurança e processamento de pacotes no Kernel Linux. Os experimentos de rede utilizam ambientes isolados com o **Containerlab**.
 
 > **Ambiente-alvo:** estes laboratórios foram projetados e devem ser validados no Windows 11 com **WSL 2**, Ubuntu, Docker Engine e Containerlab. A execução em outras distribuições ou diretamente sobre Linux pode exigir adaptações nos hooks, caminhos e recursos oferecidos pelo kernel.
 
 ## Atualizando repositório local
 
-Sessão temporária apenas para facilitar a atualização dos repoistótios locais nas máquinas de teste.
+Seção temporária para facilitar a atualização dos repositórios locais nas máquinas de teste.
 
 ```bash
 cd ~
@@ -31,10 +31,11 @@ cd ebpf-grad-labs
    6. [Instalar e testar o Docker](#instalar-e-testar-o-docker)
    7. [Instalar e testar o Containerlab](#instalar-e-testar-o-containerlab)
    8. [Clonar o repositório](#clonar-o-repositorio)
-4. [Por que WSL2](#por-que-wsl2)
-5. [Cuidados específicos no WSL2](#cuidados-especificos-no-wsl2)
-6. [Soluções de problemas](#solucoes-de-problemas)
-7. [Referências](#referencias)
+4. [Laboratórios disponíveis](#laboratorios-disponiveis)
+5. [Por que WSL2](#por-que-wsl2)
+6. [Cuidados específicos no WSL2](#cuidados-especificos-no-wsl2)
+7. [Soluções de problemas](#solucoes-de-problemas)
+8. [Referências](#referencias)
 
 ## 🧠 O que é o eBPF? (Introdução Teórica)
 
@@ -54,7 +55,7 @@ Os tipos de programas eBPF (*program types*) definem o "contrato" entre o seu c�
 
 Eles são divididos nas seguintes categorias principais:
 
-1. **Networking (Rede):** A categoria mais popular, onde o eBPF brilha ao processar pacotes em alta velocidade[cite: 4, 5]. Inclui o **XDP** (executado no driver da placa de rede) e o **TC** (Traffic Control, anexado à camada de roteamento do kernel).
+1. **Networking (Rede):** A categoria mais popular, onde o eBPF brilha ao processar pacotes em alta velocidade. Inclui o **XDP** (executado no driver da placa de rede) e o **TC** (Traffic Control, anexado à camada de roteamento do kernel).
 2. **Tracing e Monitoramento:** Permitem observar o comportamento interno do sistema operacional e de aplicações em tempo real, sem reinicialização. Inclui o **Kprobe**, que permite anexar código eBPF a quase qualquer função interna do Kernel.
 3. **Segurança e Controle de Acesso:** Focados em garantir que o sistema opere dentro de políticas permitidas. Inclui o **LSM (Linux Security Modules)**, que permite criar políticas para vetar operações diretamente nos ganchos de segurança do sistema.
 
@@ -170,28 +171,21 @@ sudo apt install -y \
   dwarves pahole trace-cmd tmux vim nano file
 ```
 
-Durante a instalacao, o pacote `iperf3` pode abrir uma tela perguntando:
+Durante a instalacao, o pacote complementar `iperf3` pode abrir uma tela perguntando:
 
 ```text
 Start Iperf3 as a daemon automatically?
 ```
 
-Escolha `<No>`. Use `Tab` para alternar entre as opcoes e `Enter` para confirmar. Nos laboratorios, o `iperf3` e iniciado manualmente pelos comandos ou scripts, entao nao precisa ficar rodando automaticamente no Ubuntu/WSL2.
+Escolha `<No>`. Use `Tab` para alternar entre as opcoes e `Enter` para confirmar. Os três laboratorios atuais não utilizam o `iperf3`, então ele não precisa ficar rodando automaticamente no Ubuntu/WSL2.
 
-Os laboratorios mais avancados podem depender de cgroup v2 e BTF do kernel. Esses detalhes aparecem em [Cuidados especificos no WSL2](#cuidados-especificos-no-wsl2) e nas solucoes de problemas.
+O Lab 1 depende do BTF do kernel. Esse requisito aparece em [Cuidados especificos no WSL2](#cuidados-especificos-no-wsl2) e nas solucoes de problemas.
 
 ### Instalar e testar o Docker
 
 Antes de instalar o Docker, garanta que o `apt update` nao esta falhando:
 
 ```bash
-sudo apt update
-```
-
-Se aparecer erro envolvendo `apt.llvm.org/resolute`, remova a fonte quebrada antes de continuar:
-
-```bash
-sudo rm -f /etc/apt/sources.list.d/*apt_llvm_org*
 sudo apt update
 ```
 
@@ -232,6 +226,14 @@ ls
 
 O caminho deve estar dentro de `/home/seu_usuario/ebpf-grad-labs`, nao em `/mnt/c/...`.
 
+## Laboratorios disponiveis
+
+Os laboratorios devem ser executados na ordem abaixo. Cada pasta possui um README próprio com preparação, testes, resultados esperados e limpeza.
+
+1. [Lab 1 — Kprobe e BPF LSM](Lab1-Tipos_eBPF/README.md): compara observabilidade com Kprobe e bloqueio com BPF LSM.
+2. [Lab 2 — XDP ingress e TC egress](Lab2-XDP_vs_TC/README.md): compara o descarte de tráfego no ingresso e na saída.
+3. [Lab 3 — Firewall dinâmico com eBPF Maps](Lab3-Mapas_eBPF_Firewall/README.md): altera uma blacklist pelo userspace sem recompilar o programa.
+
 ## Por que WSL2
 
 WSL2 permite executar Linux no Windows 11 com um kernel Linux real, sem depender de uma maquina virtual tradicional. Para esta disciplina, isso e util porque os laboratorios usam Docker, Containerlab, eBPF, XDP, `bpftool`, `clang`, `libbpf` e ferramentas de rede Linux.
@@ -246,7 +248,7 @@ Limitacoes:
 
 - o kernel do WSL2 nao é um kernel Ubuntu generico;
 - alguns pacotes `linux-tools-$(uname -r)` podem nao existir para kernels Microsoft do WSL2;
-- recursos eBPF avancados dependem de BTF, cgroup v2 e permissao de administrador dentro do Linux;
+- recursos eBPF dependem do suporte oferecido pelo kernel e de permissao de administrador dentro do Linux;
 
 ## Cuidados especificos no WSL2
 
@@ -311,15 +313,6 @@ wsl --shutdown
 ```
 
 Abra o Ubuntu novamente e repita a verificacao.
-
-### Confirme cgroup v2 antes dos labs SockOps
-
-```bash
-mount | grep cgroup2
-```
-
-Os scripts de metricas TCP anexam programas ao cgroup raiz em `/sys/fs/cgroup`.
-
 
 ## Solucoes de problemas
 
@@ -393,74 +386,19 @@ wsl --shutdown
 
 Depois abra o Ubuntu novamente.
 
-### cgroup v2 nao encontrado
+### Limpar um laboratorio que permaneceu ativo
+
+Entre na pasta do laboratório atual e utilize o alvo de limpeza correspondente:
 
 ```bash
-mount | grep cgroup2
-```
+cd ~/ebpf-grad-labs/Lab1-Tipos_eBPF
+make clean
 
-Se nao aparecer, reinicie o WSL:
+cd ~/ebpf-grad-labs/Lab2-XDP_vs_TC
+make clean
 
-```powershell
-wsl --shutdown
-```
-
-### `clang-18` nao encontrado
-
-```bash
-apt search clang- | grep '^clang-[0-9]'
-```
-
-Instale a versao disponivel exigida pelos scripts de metricas TCP:
-
-```bash
-sudo apt install -y clang-18 llvm-18
-```
-
-Se `clang-14` nao existir no Ubuntu 26.04, ignore esse pacote no fluxo padrao. Ele aparece no `lab-02/bpf_cubic/Makefile`, mas o objeto `bpf_cubic.o` ja esta no repositorio.
-
-### `apt update` falha com `apt.llvm.org/resolute`
-
-Se voce tentou usar `llvm.sh` e apareceu erro como `https://apt.llvm.org/resolute ... 404 Not Found`, remova a fonte quebrada:
-
-```bash
-sudo rm -f /etc/apt/sources.list.d/*apt_llvm_org*
-sudo apt update
-```
-
-Esse erro acontece porque o apt.llvm.org pode ainda nao fornecer repositorio para o codename do Ubuntu 26.04.
-
-<!-- ### Falha no build da imagem `ebpf-host`
-
-O Dockerfile do Lab 02 baixa pacotes Ubuntu, configura o repositorio LLVM e clona o repositorio do kernel Linux para compilar `bpftool`. Verifique internet e DNS:
-
-```bash
-ping -c 3 github.com
-ping -c 3 apt.llvm.org
-```
-
-Reexecute o build:
-
-```bash
-cd ~/Prog-Networks-2026/lab-02
-sudo docker build --no-cache -t ebpf-host:latest ebpf-host/
-``` -->
-
-### Laboratorios antigos ainda ativos
-
-Destrua a topologia correspondente antes de rodar novamente:
-
-<!-- tenho q adaptar essa parte ao laboratório atual, mas ainda n fiz isso pois ainda n tenhocerteza de como vão ficar os labs -->
-
-```bash
-cd ~/Prog-Networks-2026/lab-01
-sudo containerlab destroy -t lab-ebpf.clab.yml
-
-cd ~/Prog-Networks-2026/lab-03
-sudo containerlab destroy -t ebpf-counter.clab.yml
-
-cd ~/Prog-Networks-2026/lab-02
-sudo containerlab destroy -t topology-04.yml --cleanup
+cd ~/ebpf-grad-labs/Lab3-Mapas_eBPF_Firewall
+make clean
 ```
 
 Confira containers restantes:
@@ -470,8 +408,6 @@ sudo docker ps -a
 ```
 
 ## Referencias
-
-<!-- Olha, esses links n deixaram de ser referencia a pesar que que n estarei fazendo exatamente igual ao Prog-Networks-2026 -->
 
 - Repositorio da disciplina: https://github.com/nerds-ufes/Prog-Networks-2026
 - Microsoft WSL: https://learn.microsoft.com/windows/wsl/install

@@ -164,12 +164,14 @@ Esses comandos iniciam novos programas. Cada inicialização passa pela função
 Volte ao Terminal 2. Devem aparecer mensagens semelhantes a:
 
 ```text
-KPROBE: Processo 'ls' executado!
-KPROBE: Processo 'date' executado!
-KPROBE: Processo 'whoami' executado!
+KPROBE: Processo 'bash' executado!
+KPROBE: Processo 'sudo' executado!
+KPROBE: Processo 'grep' executado!
 ```
 
-O nome e a ordem dos processos podem variar porque o sistema continua executando outros programas enquanto o Kprobe está ativo.
+O Kprobe observa todas as chamadas a `execve` realizadas pelo sistema enquanto estiver ativo. Portanto, os eventos gerados por `ls`, `date` e `whoami` podem aparecer misturados a eventos de outros processos e serviços do ambiente.
+
+O programa usa `bpf_get_current_comm()` no início de `execve`. Nesse momento, o processo ainda pode ter o nome do programa anterior, como `bash`, antes de ser substituído pelo novo executável. Por isso, o texto entre aspas nem sempre será `ls`, `date` ou `whoami`, mesmo quando esses comandos tiverem gerado o evento.
 
 ### 9. Confirme o programa com bpftool
 
