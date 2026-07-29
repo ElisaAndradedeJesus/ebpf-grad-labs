@@ -6,3 +6,7 @@ vmlinux.h
 
 # Contexto local usado para continuar o trabalho entre conversas do Codex.
 HANDOFF.md
+
+# Material bibliografico mantido apenas para consulta local.
+/Ebook What is eBPF OReilly report.pdf
+/learning-ebpf-programming-the-linux-kernel-for-enhanced-observability-networking-and-security-9781098135126.pdf
