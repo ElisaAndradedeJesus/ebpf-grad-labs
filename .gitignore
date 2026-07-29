@@ -3,3 +3,6 @@
 
 # Header gerado a partir do BTF do kernel pelo Lab 1.
 vmlinux.h
+
+# Contexto local usado para continuar o trabalho entre conversas do Codex.
+HANDOFF.md

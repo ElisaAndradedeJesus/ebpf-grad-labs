@@ -4,7 +4,7 @@ Bem-vindos à disciplina prática de **eBPF (Extended Berkeley Packet Filter)**.
 
 > **Ambiente-alvo:** estes laboratórios foram projetados e devem ser validados no Windows 11 com **WSL 2**, Ubuntu, Docker Engine e Containerlab. A execução em outras distribuições ou diretamente sobre Linux pode exigir adaptações nos hooks, caminhos e recursos oferecidos pelo kernel.
 
-## Atualizando repositório local
+<!-- ## Atualizando repositório local
 
 Seção temporária para facilitar a atualização dos repositórios locais nas máquinas de teste.
 
@@ -14,7 +14,7 @@ rm -rf ~/ebpf-grad-labs
 test ! -e ~/ebpf-grad-labs && echo "Repositório removido"
 git clone https://github.com/ElisaAndradedeJesus/ebpf-grad-labs.git
 cd ebpf-grad-labs
-```
+``` -->
 
 ---
 
