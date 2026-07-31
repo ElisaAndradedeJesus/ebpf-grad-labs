@@ -21,22 +21,27 @@ cd ebpf-grad-labs
 ## Sumário
 
 1. [O que é o eBPF?](#o-que-é-o-ebpf-introdução-teórica)
-2. [O Contrato com o Kernel](#o-contrato-com-o-kernel-tipos-de-programas)
-3. [Preparando o ambiente de desenvolvimento](#preparando-ambiente-de-desenvolvimento)
+2. [Por que estender o kernel é difícil?](#por-que-estender-o-kernel-é-difícil)
+3. [O ciclo de vida de um programa eBPF](#o-ciclo-de-vida-de-um-programa-ebpf)
+4. [O Verifier, o contexto e os helpers](#o-verifier-o-contexto-e-os-helpers)
+5. [O contrato com o Kernel](#o-contrato-com-o-kernel-tipos-de-programas)
+6. [Comunicação com o userspace por meio de Maps](#comunicação-com-o-userspace-por-meio-de-maps)
+7. [Portabilidade, BTF e CO-RE](#portabilidade-btf-e-co-re)
+8. [Preparando o ambiente de desenvolvimento](#preparando-ambiente-de-desenvolvimento)
    1. [Requisitos](#requisitos)
    2. [Instalando WSL e Ubuntu](#instalando-wsl-e-ubuntu)
-   3. [Abrir o Ubuntu](#abrir-o-ubuntu)
-   4. [Atualizar o Ubuntu](#atualizar-o-ubuntu)
-   5. [Reiniciar o WSL após a atualização](#reiniciar-o-wsl-após-a-atualização)
+   3. [Atualizar o Ubuntu](#atualizar-o-ubuntu)
+   4. [Reiniciar o WSL após a atualização](#reiniciar-o-wsl-após-a-atualização)
+   5. [Abrir o Ubuntu](#abrir-o-ubuntu)
    6. [Instalar dependências comuns](#instalar-dependências-comuns)
-   7. [Instalar e testar o Docker](#instalar-e-testar-o-docker)
-   8. [Instalar e testar o Containerlab](#instalar-e-testar-o-containerlab)
+   7. [Instalar o Docker](#instalar-o-docker)
+   8. [Instalar o Containerlab](#instalar-o-containerlab)
    9. [Clonar o repositório](#clonar-o-repositório)
-4. [Laboratórios disponíveis](#laboratórios-disponíveis)
-5. [Por que WSL2](#por-que-wsl2)
-6. [Cuidados específicos no WSL2](#cuidados-específicos-no-wsl2)
-7. [Soluções de problemas](#soluções-de-problemas)
-8. [Referências](#referências)
+9. [Laboratórios disponíveis](#laboratórios-disponíveis)
+10. [Por que WSL2](#por-que-wsl2)
+11. [Cuidados específicos no WSL2](#cuidados-específicos-no-wsl2)
+12. [Soluções de problemas](#soluções-de-problemas)
+13. [Referências](#referências)
 
 ## 🧠 O que é o eBPF? (Introdução Teórica)
 
@@ -46,9 +51,66 @@ Historicamente, o sistema operacional é dividido em dois espaços por motivos d
 
 Se você quisesse adicionar uma funcionalidade profunda ao Kernel (como um novo algoritmo de rede ou uma ferramenta de telemetria), precisava escrever um **Módulo de Kernel (LKM)**. O problema é que um único erro de ponteiro em um Módulo de Kernel causa um *Kernel Panic*, travando e reiniciando a máquina inteira.
 
-**O eBPF resolve esse problema.** Ele é frequentemente comparado ao "JavaScript do Kernel". Assim como o JavaScript permite que os navegadores executem códigos dinâmicos de forma segura dentro de uma *sandbox*, o eBPF permite executar mini-programas dinâmicos diretamente no Kernel Linux, sem precisar alterar o código-fonte do Sistema Operacional ou carregar módulos perigosos.
+**O eBPF oferece uma alternativa para muitos desses casos.** Ele é frequentemente comparado ao "JavaScript do Kernel". A comparação ajuda a transmitir a ideia de código carregado dinamicamente em um ambiente controlado, mas não deve ser interpretada literalmente: programas eBPF possuem tipos, pontos de anexação e recursos rigorosamente limitados pelo Kernel.
 
-A segurança do eBPF é garantida pelo **Verificador (Verifier)**: um juiz estrito interno do Linux que analisa seu código antes de executá-lo. Se o seu código tiver loops infinitos, acessar memória proibida ou for inseguro, o Verificador o rejeita instantaneamente.
+Uma camada essencial de segurança do eBPF é o **Verificador (Verifier)**: um componente interno do Linux que analisa o programa antes de permitir seu carregamento. Se o código não provar que termina, tentar acessar memória proibida ou violar as regras do seu tipo, o Verifier o rejeita.
+
+O nome significa *Extended Berkeley Packet Filter* e revela a origem da tecnologia em filtragem de pacotes. Entretanto, o eBPF moderno não se limita à rede. Ele também é utilizado em observabilidade, análise de desempenho e aplicação de políticas de segurança.
+
+## Por que estender o Kernel é difícil?
+
+Aplicações recorrem constantemente ao Kernel para abrir arquivos, criar processos, utilizar memória e enviar dados pela rede. Observar ou modificar esses pontos permite construir ferramentas muito poderosas, mas alterar o Kernel tradicionalmente exige:
+
+- modificar seu código-fonte e aguardar a distribuição de uma nova versão; ou
+- carregar um módulo que passa a executar com privilégios de Kernel.
+
+Nos dois casos, um erro pode comprometer a estabilidade de toda a máquina. Além disso, uma mudança incorporada ao Kernel precisa atender muitos usuários e ambientes diferentes.
+
+O eBPF permite carregar uma funcionalidade específica dinamicamente, sem recompilar o Kernel e sem obrigar outros sistemas a adotar a mesma mudança. Essa flexibilidade não elimina os riscos: carregar programas eBPF exige privilégios e só deve ser feito com código confiável.
+
+## O ciclo de vida de um programa eBPF
+
+Um programa eBPF não começa a funcionar apenas porque seu código C existe. Ele passa por uma sequência:
+
+```text
+código-fonte C
+      ↓ clang/LLVM
+objeto ELF com bytecode eBPF
+      ↓ ferramenta no userspace, como bpftool
+Verifier analisa o programa
+      ↓ programa aceito
+programa é carregado no Kernel
+      ↓ anexação a um hook
+um evento aciona o programa
+      ↓
+o programa observa, permite, descarta ou bloqueia uma operação
+```
+
+O arquivo `.bpf.o` gerado pelo Clang é um objeto ELF. Ele contém o bytecode que será apresentado ao Kernel e também pode conter definições de Maps. Uma ferramenta no userspace, como `bpftool`, solicita o carregamento e a anexação.
+
+Carregar e anexar são ações diferentes:
+
+- **carregar** coloca o programa verificado no Kernel;
+- **anexar** conecta o programa a um evento ou ponto específico;
+- **desanexar** remove essa conexão;
+- **descarregar** acontece quando não resta nenhuma referência ao programa.
+
+Essa distinção aparece nos Makefiles dos laboratórios, que separam preparação, anexação, testes e limpeza.
+
+## O Verifier, o contexto e os helpers
+
+Antes do carregamento, o Verifier analisa os caminhos possíveis do programa. Entre outras verificações, ele exige que:
+
+- a execução termine em um número limitado de instruções;
+- ponteiros sejam validados antes de serem acessados;
+- leituras e escritas permaneçam dentro das regiões permitidas;
+- o programa utilize somente recursos compatíveis com seu tipo.
+
+Cada hook fornece um **contexto**, isto é, os dados de entrada disponíveis naquele ponto. Um programa XDP recebe informações sobre um pacote de rede; um Kprobe recebe o contexto relacionado à função observada. O programa não pode presumir que qualquer dado do Kernel está disponível.
+
+Os **helpers** são funções oferecidas pelo Kernel aos programas eBPF. A lista permitida depende do tipo do programa. Essa é uma parte importante do contrato: um helper adequado ao processamento de pacotes pode não estar disponível para um programa de tracing.
+
+Ser aceito pelo Verifier significa que o programa respeita as regras de segurança verificáveis, não que sua lógica está correta. Um programa pode ser seguro para o Kernel e ainda tomar uma decisão equivocada. Por isso os laboratórios comparam uma linha de base com o comportamento após a anexação.
 
 ## 🏗️ O Contrato com o Kernel: Tipos de Programas
 
@@ -60,7 +122,48 @@ Eles são divididos nas seguintes categorias principais:
 2. **Tracing e Monitoramento:** Permitem observar o comportamento interno do sistema operacional e de aplicações em tempo real, sem reinicialização. Inclui o **Kprobe**, que permite anexar código eBPF a quase qualquer função interna do Kernel.
 3. **Segurança e Controle de Acesso:** Focados em garantir que o sistema opere dentro de políticas permitidas. Inclui o **LSM (Linux Security Modules)**, que permite criar políticas para vetar operações diretamente nos ganchos de segurança do sistema.
 
-O Kernel impõe restrições rígidas por segurança. Um programa de Tracing tem acesso a quase tudo do sistema, mas não pode modificar o conteúdo de um pacote de rede. Por outro lado, um programa XDP de rede não consegue ler o nome de um arquivo sendo aberto pelo usuário.
+O Kernel impõe restrições rígidas por segurança. Um programa de tracing acessa somente o contexto e os helpers permitidos para seu tipo e não pode assumir as capacidades de um programa de rede. Da mesma forma, um programa XDP recebe o contexto do pacote e não o contexto de uma operação de abertura de arquivo.
+
+Nos laboratórios, esses contratos aparecem de maneira concreta:
+
+| Programa | Ponto de anexação | Evento observado | Possível resultado |
+|---|---|---|---|
+| Kprobe | entrada de `__x64_sys_execve` | tentativa de executar um programa | registrar o evento |
+| BPF LSM | `bprm_check_security` | verificação de segurança antes da execução | permitir ou negar |
+| XDP | ingresso de uma interface | recebimento de um pacote | passar ou descartar |
+| TC | caminho de saída de uma interface | envio de um pacote | permitir ou descartar |
+
+No Lab 1, portanto, o Kprobe não observa uma porta de rede. Ele é acionado quando o Kernel entra na função `__x64_sys_execve`. O BPF LSM é o componente que tenta impedir a execução do `curl`, quando esse recurso está ativo no Kernel utilizado.
+
+## Comunicação com o userspace por meio de Maps
+
+Programas eBPF executam no Kernel, mas frequentemente precisam receber configurações ou entregar informações a aplicações no userspace. Os **eBPF Maps** realizam essa comunicação.
+
+Maps são estruturas de dados mantidas pelo Kernel. Existem diferentes tipos, mas muitos podem ser compreendidos como armazenamento de pares chave–valor. Eles permitem, por exemplo:
+
+- o programa eBPF registrar métricas para o userspace consultar;
+- o userspace fornecer configurações que alteram o comportamento do programa;
+- diferentes programas eBPF compartilharem informações.
+
+
+
+## Portabilidade, BTF e CO-RE
+
+Estruturas internas do Kernel podem mudar entre versões. Um programa compilado supondo um formato específico pode encontrar outro formato na máquina de destino.
+
+O **BTF (BPF Type Format)** descreve tipos e estruturas do Kernel. A abordagem **CO-RE (*Compile Once – Run Everywhere*)** utiliza essas informações, com suporte do Clang e da libbpf, para reduzir problemas de portabilidade.
+
+O arquivo `/sys/kernel/btf/vmlinux` expõe o BTF do Kernel em execução. No Lab 1, o `bpftool` transforma essas informações em `vmlinux.h`, usado durante a compilação do programa BPF LSM:
+
+```text
+/sys/kernel/btf/vmlinux
+          ↓ bpftool
+      vmlinux.h
+          ↓ clang
+   programa eBPF compilado
+```
+
+CO-RE facilita a portabilidade, mas não garante que todo hook ou recurso exista em qualquer Kernel. O BPF LSM, por exemplo, precisa estar habilitado e ativo. Essa é a razão de o Lab 1 verificar o ambiente e continuar apenas com o Kprobe quando o BPF LSM não está disponível no WSL 2.
 
 ---
 
@@ -204,7 +307,7 @@ Escolha `<No>`. Use `Tab` para alternar entre as opções e `Enter` para confirm
 
 O Lab 1 depende do BTF do kernel. Esse requisito aparece em [Cuidados específicos no WSL2](#cuidados-específicos-no-wsl2) e nas soluções de problemas.
 
-### Instalar e testar o Docker
+### Instalar o Docker
 
 Antes de instalar o Docker, garanta que o `apt update` não está falhando:
 
@@ -432,6 +535,7 @@ sudo docker ps -a
 
 ## Referências
 
+- Liz Rice. *What Is eBPF? An Introduction to a New Generation of Networking, Security, and Observability Tools*. O’Reilly Media, 2022.
 - Repositório da disciplina: https://github.com/nerds-ufes/Prog-Networks-2026
 - Microsoft WSL: https://learn.microsoft.com/windows/wsl/install
 - Docker Engine no Ubuntu: https://docs.docker.com/engine/install/ubuntu/
