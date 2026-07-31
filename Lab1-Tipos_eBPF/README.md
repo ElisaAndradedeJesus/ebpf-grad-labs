@@ -1,15 +1,3 @@
-<!--
-TODO depois da validacao atual do laboratorio:
-
-- Remover a limpeza automatica executada ao encerrar `make test`. O teste deve
-  apenas encerrar/desanexar os programas necessarios, preservando os arquivos
-  gerados por `make setup` para que possa ser repetido sem recompilar tudo.
-- Deixar a remocao completa do ambiente exclusivamente sob responsabilidade de
-  `make clean`.
-- Acrescentar, ao final deste tutorial, uma etapa explicando quando executar
-  `make clean`, o que sera removido e como confirmar que a limpeza funcionou.
--->
-
 # Lab 1: Kprobe e BPF LSM na prática
 
 Neste laboratório, vamos comparar dois usos de eBPF relacionados ao comportamento do sistema operacional:
@@ -45,7 +33,9 @@ O resultado de `pwd` deve terminar em `/ebpf-grad-labs`, e o comando `ls` deve m
 - `lsm_block.bpf.c`: tenta impedir a execução do `curl`;
 - `Makefile`: prepara, compila, carrega, testa e remove os programas.
 
-O Makefile gera `vmlinux.h`, compila os programas e monta `bpffs` e `securityfs` caso ainda não estejam montados. Os arquivos gerados são removidos ao final.
+O Makefile gera `vmlinux.h`, compila os programas e monta `bpffs` e `securityfs`
+caso ainda não estejam montados. `make attach` anexa os programas ao kernel,
+`make detach` os desanexa e `make clean` remove somente os arquivos gerados.
 
 ## Executar o laboratório
 
@@ -87,42 +77,41 @@ make setup
 
 Esse comando verifica BTF, prepara os filesystems, gera `vmlinux.h` e compila os dois programas sem carregá-los no kernel.
 
-### 5. Execute o teste
+### 5. Anexe os programas
 
-Depois que a preparação terminar, carregue e teste os programas:
+Depois que a preparação terminar, carregue e anexe os programas:
 
 ```bash
-make test
+make attach
 ```
 
-O teste deve:
+Esse comando:
 
-1. carregar e anexar o Kprobe;
-2. verificar se BPF LSM está ativo;
-3. aguardar antes de remover os programas.
+1. carrega e anexa o Kprobe;
+2. verifica se BPF LSM está ativo;
+3. carrega e testa o programa BPF LSM quando o recurso está disponível;
+4. mantém os programas fixados em `/sys/fs/bpf/ebpf_lab1`.
 
-Quando aparecer a mensagem abaixo, a preparação terminou e o Kprobe está carregado no kernel:
+Quando aparecer a mensagem abaixo, os programas estarão anexados e continuarão
+ativos mesmo depois que o comando devolver o terminal:
 
 ```text
-Pressione Enter para encerrar e remover os programas eBPF.
+Programas anexados. Quando terminar o experimento, execute: make detach
 ```
 
-**Não pressione Enter ainda.** Esse será o **Terminal 1**, responsável por manter o laboratório ativo enquanto o teste é realizado.
+### 6. Entenda o teste com dois terminais
 
-### 6. Entenda o teste com três terminais
-
-O teste utiliza três terminais Ubuntu ao mesmo tempo. Cada um possui uma responsabilidade diferente:
+O teste utiliza dois terminais Ubuntu ao mesmo tempo. Cada um possui uma responsabilidade diferente:
 
 | Terminal | Responsabilidade | Comando principal |
 |---|---|---|
-| Terminal 1 | Carregar e manter o Kprobe ativo | `make test` |
-| Terminal 2 | Exibir os eventos produzidos pelo Kprobe | `sudo cat /sys/kernel/tracing/trace_pipe` |
-| Terminal 3 | Executar programas para gerar eventos | `ls`, `date` e `whoami` |
+| Terminal 1 | Anexar os programas, exibir os eventos e, ao final, desanexá-los | `make attach`, `sudo cat /sys/kernel/tracing/trace_pipe` e `make detach` |
+| Terminal 2 | Executar programas para gerar eventos e confirmar o Kprobe | `ls`, `date`, `whoami` e `bpftool` |
 
 O fluxo do experimento é:
 
 ```text
-Terminal 3 executa um programa
+Terminal 2 executa um programa
               ↓
 O kernel executa __x64_sys_execve
               ↓
@@ -130,12 +119,12 @@ O Kprobe carregado pelo Terminal 1 é acionado
               ↓
 O programa eBPF escreve uma mensagem de tracing
               ↓
-O Terminal 2 exibe a mensagem pelo trace_pipe
+O Terminal 1 exibe a mensagem pelo trace_pipe
 ```
 
-### 7. Terminal 2: observe os eventos do Kprobe
+### 7. Terminal 1: observe os eventos do Kprobe
 
-Abra um segundo terminal Ubuntu e execute:
+No mesmo Terminal 1 em que você executou `make attach`, execute:
 
 ```bash
 sudo cat /sys/kernel/tracing/trace_pipe
@@ -149,9 +138,9 @@ sudo cat /sys/kernel/debug/tracing/trace_pipe
 
 Deixe esse comando em execução. O terminal ficará aparentemente parado enquanto aguarda novas mensagens do kernel. Isso é o comportamento esperado.
 
-### 8. Terminal 3: gere eventos de execução
+### 8. Terminal 2: gere eventos de execução
 
-Abra um terceiro terminal Ubuntu e execute, um de cada vez:
+Abra um segundo terminal Ubuntu e execute, um de cada vez:
 
 ```bash
 ls
@@ -161,7 +150,7 @@ whoami
 
 Esses comandos iniciam novos programas. Cada inicialização passa pela função `__x64_sys_execve`, na qual o Kprobe está anexado.
 
-Volte ao Terminal 2. Devem aparecer mensagens semelhantes a:
+Volte ao Terminal 1. Devem aparecer mensagens semelhantes a:
 
 ```text
 KPROBE: Processo 'bash' executado!
@@ -175,7 +164,7 @@ O programa usa `bpf_get_current_comm()` no início de `execve`. Nesse momento, o
 
 ### 9. Confirme o programa com bpftool
 
-Ainda no Terminal 3, confirme que o programa está carregado no kernel:
+Ainda no Terminal 2, confirme que o programa está carregado no kernel:
 
 ```bash
 sudo bpftool prog list | grep -A 4 trace_exec
@@ -186,7 +175,7 @@ A saída deve identificar `trace_exec` como um programa do tipo `kprobe`.
 O teste do Kprobe é considerado bem-sucedido quando existem as duas evidências:
 
 1. `bpftool` mostra o programa `trace_exec` carregado;
-2. o Terminal 2 mostra mensagens geradas quando os comandos do Terminal 3 são executados.
+2. o Terminal 1 mostra mensagens geradas quando os comandos do Terminal 2 são executados.
 
 ### 10. Interprete o teste do BPF LSM
 
@@ -206,38 +195,68 @@ AVISO: BPF LSM não está ativo neste kernel; o teste de bloqueio será ignorado
 
 Esse aviso não significa que a compilação falhou. Ele indica que o kernel foi iniciado sem o BPF LSM na lista de módulos de segurança ativos.
 
-### 11. Encerre e limpe o laboratório
+### 11. Desanexe os programas
 
 Siga esta ordem para encerrar:
 
-1. No Terminal 2, que está lendo `trace_pipe`, pressione `Ctrl+C`.
-2. Volte ao Terminal 1, que ainda mostra a mensagem para pressionar Enter.
-3. Pressione Enter no Terminal 1.
-
-O Makefile removerá:
-
-- programas e links fixados em `/sys/fs/bpf/ebpf_lab1`;
-- `kprobe_exec.bpf.o`;
-- `lsm_block.bpf.o`;
-- `vmlinux.h` gerado durante a execução.
-
-## Confirmar a limpeza
-
-Depois de encerrar o laboratório, execute no Terminal 3:
+1. No Terminal 1, que está lendo `trace_pipe`, pressione `Ctrl+C`.
+2. No mesmo terminal, execute:
 
 ```bash
-sudo test ! -e /sys/fs/bpf/ebpf_lab1 && echo "Lab 1 removido com sucesso"
+make detach
+```
+
+Esse comando remove do kernel:
+
+- programas e links fixados em `/sys/fs/bpf/ebpf_lab1`.
+
+Os arquivos `kprobe_exec.bpf.o`, `lsm_block.bpf.o` e `vmlinux.h` permanecerão
+no diretório. Assim, você pode executar `make attach` novamente sem repetir
+`make setup`.
+
+Para confirmar que os programas foram desanexados, execute no Terminal 1:
+
+```bash
+sudo test ! -e /sys/fs/bpf/ebpf_lab1 && echo "Programas eBPF desanexados com sucesso"
+```
+
+## Limpar os arquivos gerados
+
+Execute `make clean` quando terminar os testes e não precisar mais repetir o
+experimento:
+
+```bash
+make clean
+```
+
+Esse comando remove:
+
+- `kprobe_exec.bpf.o`;
+- `lsm_block.bpf.o`;
+- `vmlinux.h`.
+
+Se os programas ainda estiverem anexados, `make clean` não removerá os arquivos
+e solicitará que você execute `make detach` primeiro.
+
+Para confirmar que a limpeza funcionou:
+
+```bash
+sudo test ! -e /sys/fs/bpf/ebpf_lab1 && \
+test ! -e kprobe_exec.bpf.o && \
+test ! -e lsm_block.bpf.o && \
+test ! -e vmlinux.h && \
+echo "Lab 1 removido com sucesso"
 ```
 
 ## Solução de problemas
 
-### `Permission denied` durante `make setup` ou `make test`
+### `Permission denied` durante `make setup`, `make attach` ou `make detach`
 
 Execute novamente e informe a senha do usuário Ubuntu quando `sudo` solicitar:
 
 ```bash
 make setup
-make test
+make attach
 ```
 
 ### `/sys/kernel/btf/vmlinux não está disponível`
@@ -274,7 +293,7 @@ Depois, execute novamente:
 
 ```bash
 make setup
-make test
+make attach
 ```
 
 ### O Kprobe não consegue encontrar `__x64_sys_execve`

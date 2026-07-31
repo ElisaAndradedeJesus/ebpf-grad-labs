@@ -1,4 +1,4 @@
-# Usa Bash para executar as receitas. O alvo test utiliza recursos como funcoes,
+# Usa Bash para executar as receitas. O alvo attach utiliza recursos como funcoes,
 # trap e pipefail, que nao fazem parte de todos os shells POSIX.
 SHELL := /bin/bash
 
@@ -13,8 +13,9 @@ PIN_ROOT := /sys/fs/bpf/ebpf_lab1
 
 # Estes nomes representam acoes, e nao arquivos que devem ser gerados.
 # A declaracao PHONY garante que os alvos sejam executados mesmo se existir um
-# arquivo chamado help, check, mounts, build, setup, test ou clean no diretorio.
-.PHONY: help check mounts build setup test clean
+# arquivo chamado help, check, mounts, build, setup, attach, detach ou clean no
+# diretorio.
+.PHONY: help check mounts build setup attach detach clean
 
 # Exibe os comandos disponiveis sem preparar ou modificar o ambiente.
 help:
@@ -25,8 +26,9 @@ help:
 	@echo "  make mounts  prepara bpffs e securityfs"
 	@echo "  make build   gera vmlinux.h e compila os programas"
 	@echo "  make setup   prepara filesystems e compila os programas"
-	@echo "  make test    carrega e testa os programas ja preparados"
-	@echo "  make clean   remove programas e arquivos gerados"
+	@echo "  make attach  carrega e anexa os programas ja preparados"
+	@echo "  make detach  desanexa os programas do kernel"
+	@echo "  make clean   remove somente os arquivos gerados"
 
 # Verifica primeiro as ferramentas usadas na compilacao e na inspecao eBPF.
 # command -v termina com erro quando um executavel nao esta no PATH.
@@ -127,52 +129,60 @@ build: check
 setup: check mounts build
 # Orienta a proxima etapa apenas depois que dependencias, filesystems e objetos
 # estiverem prontos.
-	@echo "Ambiente do Lab 1 preparado. Execute: make test"
+	@echo "Ambiente do Lab 1 preparado. Execute: make attach"
 
-# Executa o experimento sobre os objetos produzidos anteriormente por setup.
+# Carrega e anexa os objetos produzidos anteriormente por setup.
 #
 # set -euo pipefail interrompe a execucao ao encontrar erros, variaveis nao
-# definidas ou falhas escondidas em pipelines. A funcao cleanup remove os pins e
-# objetos gerados. trap garante a limpeza tanto no encerramento normal quanto em
-# interrupcoes por Ctrl+C ou erro.
+# definidas ou falhas escondidas em pipelines. Se o carregamento falhar, rollback
+# remove os pins criados nessa tentativa sem apagar os objetos compilados.
 #
 # bpftool prog loadall carrega o objeto no kernel. A opcao autoattach interpreta
 # SEC("kprobe/__x64_sys_execve") e cria o link entre o programa e o hook.
-# Enquanto o comando aguarda Enter, esse link permanece fixado no bpffs.
+# O link permanece fixado no bpffs ate a execucao de make detach.
 #
 # Em seguida, /sys/kernel/security/lsm e consultado. O programa LSM so e
 # carregado quando "bpf" aparece entre os LSMs ativos. Se estiver disponivel,
 # curl --version funciona como teste: o retorno do programa eBPF deve negar a
 # execucao. Se BPF LSM nao estiver ativo, o Kprobe continua sendo testavel.
-test:
+attach:
 # Impede o carregamento quando setup ainda nao produziu os dois objetos.
 	@test -f kprobe_exec.bpf.o -a -f lsm_block.bpf.o || { \
 		echo "ERRO: os programas do Lab 1 ainda nao foram preparados."; \
 		echo "Execute primeiro: make setup"; exit 1; }
-# Mantem todo o experimento no mesmo shell para compartilhar funcoes e traps.
-# O Kprobe e carregado com autoattach e permanece ativo enquanto o aluno observa
-# trace_pipe em outro terminal. O BPF LSM so e carregado quando o kernel anuncia
-# esse modulo; nesse caso, curl valida se a politica realmente bloqueia execve.
-# Ao encerrar ou falhar, cleanup remove os pins e os artefatos gerados.
+# Evita sobrepor pins de uma execucao anterior. O Kprobe e o BPF LSM permanecem
+# ativos depois que o alvo termina, permitindo que o aluno execute os testes em
+# outros terminais ate chamar make detach.
 	@set -Eeuo pipefail; \
-	cleanup() { \
+	if test -e "$(PIN_ROOT)"; then \
+		echo "ERRO: os programas do Lab 1 ja parecem estar anexados."; \
+		echo "Execute primeiro: make detach"; \
+		exit 1; \
+	fi; \
+	rollback() { \
 		sudo rm -rf "$(PIN_ROOT)" || true; \
-		rm -f kprobe_exec.bpf.o lsm_block.bpf.o vmlinux.h; \
+	}; \
+	on_signal() { \
+		echo "AVISO: o carregamento foi interrompido; removendo os pins criados nesta tentativa."; \
+		rollback; \
+		exit 130; \
 	}; \
 	on_error() { \
 		status=$$?; \
-		echo "ERRO: o teste do Lab 1 foi interrompido durante o carregamento do programa eBPF."; \
+		echo "ERRO: nao foi possivel anexar os programas eBPF do Lab 1."; \
 		echo "Leia a mensagem imediatamente acima para identificar a causa."; \
-		echo "O ambiente sera limpo automaticamente. Consulte 'Solucao de problemas' no README do Lab 1."; \
+		echo "Os pins criados nesta tentativa serao removidos; os arquivos compilados serao preservados."; \
+		rollback; \
+		echo "Consulte 'Solucao de problemas' no README do Lab 1."; \
 		exit $$status; \
 	}; \
-	trap cleanup EXIT INT TERM; \
+	trap on_signal INT TERM; \
 	trap on_error ERR; \
 	echo "=== LAB 1: Kprobe vs. BPF LSM (WSL 2/x86-64) ==="; \
 	sudo mkdir -p "$(PIN_ROOT)/kprobe"; \
 	echo "Anexando o Kprobe a __x64_sys_execve..."; \
 	sudo bpftool prog loadall kprobe_exec.bpf.o "$(PIN_ROOT)/kprobe" autoattach; \
-	echo "Kprobe carregado. Em outro terminal, observe com:"; \
+	echo "Kprobe carregado. Depois que este comando terminar, observe neste terminal com:"; \
 	echo "  sudo cat /sys/kernel/tracing/trace_pipe"; \
 	echo "Verificando a disponibilidade do BPF LSM..."; \
 	if sudo test -r /sys/kernel/security/lsm && sudo grep -qw bpf /sys/kernel/security/lsm; then \
@@ -180,7 +190,7 @@ test:
 		sudo bpftool prog loadall lsm_block.bpf.o "$(PIN_ROOT)/lsm" autoattach; \
 		if curl --version >/dev/null 2>&1; then \
 			echo "FALHA: o curl foi executado mesmo com o BPF LSM carregado."; \
-			exit 1; \
+			false; \
 		else \
 			echo "SUCESSO: a execucao do curl foi bloqueada pelo BPF LSM."; \
 		fi; \
@@ -188,16 +198,22 @@ test:
 		echo "AVISO: BPF LSM nao esta ativo neste kernel; o teste de bloqueio sera ignorado."; \
 		echo "LSMs ativos: $$(sudo cat /sys/kernel/security/lsm 2>/dev/null || echo 'indisponivel')"; \
 	fi; \
-	echo "Pressione Enter para encerrar e remover os programas eBPF."; \
-	read -r
+	trap - ERR INT TERM; \
+	echo "Programas anexados. Quando terminar o experimento, execute: make detach"
 
-# Permite recuperar o ambiente manualmente se uma execucao anterior tiver sido
-# interrompida. Remove os pins do kernel e os artefatos locais de compilacao.
-clean:
-# Remove os pins do bpffs para liberar programas e links que ainda estejam
-# referenciados pelo kernel.
+# Remove os pins do bpffs, liberando os programas e links no kernel, mas
+# preserva os artefatos locais para que make attach possa ser repetido.
+detach:
 	@sudo rm -rf "$(PIN_ROOT)"
-# Apaga somente os artefatos gerados localmente, preservando fontes e Makefile.
+	@echo "Programas eBPF do Lab 1 desanexados."
+
+# Apaga somente os artefatos locais. Para evitar programas ativos sem os
+# arquivos usados para cria-los, exige que make detach tenha sido executado.
+clean:
+	@if test -e "$(PIN_ROOT)"; then \
+		echo "ERRO: os programas do Lab 1 ainda estao anexados."; \
+		echo "Execute primeiro: make detach"; \
+		exit 1; \
+	fi
 	@rm -f kprobe_exec.bpf.o lsm_block.bpf.o vmlinux.h
-# Confirma a limpeza somente se as duas etapas anteriores terminaram.
-	@echo "Programas e arquivos gerados pelo Lab 1 removidos."
+	@echo "Arquivos gerados pelo Lab 1 removidos."
