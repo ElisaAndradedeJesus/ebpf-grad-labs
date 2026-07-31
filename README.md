@@ -27,15 +27,16 @@ cd ebpf-grad-labs
    2. [Instalando WSL e Ubuntu](#instalando-wsl-e-ubuntu)
    3. [Abrir o Ubuntu](#abrir-o-ubuntu)
    4. [Atualizar o Ubuntu](#atualizar-o-ubuntu)
-   5. [Instalar dependências comuns](#instalar-dependencias-comuns)
-   6. [Instalar e testar o Docker](#instalar-e-testar-o-docker)
-   7. [Instalar e testar o Containerlab](#instalar-e-testar-o-containerlab)
-   8. [Clonar o repositório](#clonar-o-repositorio)
-4. [Laboratórios disponíveis](#laboratorios-disponiveis)
+   5. [Reiniciar o WSL após a atualização](#reiniciar-o-wsl-após-a-atualização)
+   6. [Instalar dependências comuns](#instalar-dependências-comuns)
+   7. [Instalar e testar o Docker](#instalar-e-testar-o-docker)
+   8. [Instalar e testar o Containerlab](#instalar-e-testar-o-containerlab)
+   9. [Clonar o repositório](#clonar-o-repositório)
+4. [Laboratórios disponíveis](#laboratórios-disponíveis)
 5. [Por que WSL2](#por-que-wsl2)
-6. [Cuidados específicos no WSL2](#cuidados-especificos-no-wsl2)
-7. [Soluções de problemas](#solucoes-de-problemas)
-8. [Referências](#referencias)
+6. [Cuidados específicos no WSL2](#cuidados-específicos-no-wsl2)
+7. [Soluções de problemas](#soluções-de-problemas)
+8. [Referências](#referências)
 
 ## 🧠 O que é o eBPF? (Introdução Teórica)
 
@@ -70,15 +71,15 @@ O Kernel impõe restrições rígidas por segurança. Um programa de Tracing tem
 No Windows:
 
 - Windows 11.
-- Virtualizacao habilitada no firmware/BIOS.
+- Virtualização habilitada no firmware/BIOS.
 - PowerShell.
-- Acesso a internet para baixar Ubuntu, Docker, Containerlab e imagens Docker.
+- Acesso à internet para baixar Ubuntu, Docker, Containerlab e imagens Docker.
 
 No Ubuntu WSL2:
 
-- usuario com permissao de `sudo`;
+- usuário com permissão de `sudo`;
 - pelo menos 10 GB livres para imagens Docker e builds;
-- 16 GB de RAM ou mais e recomendado para executar os laboratorios com folga.
+- 16 GB de RAM ou mais é recomendado para executar os laboratórios com folga.
 
 ### Instalando WSL e Ubuntu
 
@@ -88,51 +89,28 @@ Abra o PowerShell no Windows e execute:
 wsl --install
 ```
 
-Esse comando habilita os componentes necessarios do WSL e instala uma distribuicao Ubuntu por padrao. 
+Esse comando habilita os componentes necessários do WSL e instala uma distribuição Ubuntu por padrão.
 
 Na primeira abertura do Ubuntu, o sistema vai pedir:
 
-1. nome de usuario Linux;
+1. nome de usuário Linux;
 2. senha Linux;
-3. confirmacao da senha.
+3. confirmação da senha.
 
-Essa senha sera usada com `sudo` dentro do Ubuntu. Ela nao precisa ser igual a senha do Windows.
+Essa senha será usada com `sudo` dentro do Ubuntu. Ela não precisa ser igual à senha do Windows.
 
-Se precisar listar as distribuicoes disponiveis:
+Se precisar listar as distribuições disponíveis:
 
 ```powershell
 wsl --list --online
 ```
 
-Se o Ubuntu 26.04 aparecer na lista, ele pode ser instalado explicitamente com o nome exibido pelo proprio comando. Exemplo:
+Se o Ubuntu 26.04 aparecer na lista, ele pode ser instalado explicitamente com o nome exibido pelo próprio comando. Exemplo:
 
 ```powershell
 wsl --install -d Ubuntu-26.04
 ```
 **Se o Windows pedir para reiniciar o computador, reinicie antes de continuar.**
-
-### Abrir o Ubuntu
-
-Voce pode abrir o Ubuntu pelo menu Iniciar do Windows ou digitando no PowerShell:
-
-```powershell
-wsl
-```
-
-Nao execute comandos dentro de pastas do sistema do Windows, como:
-
-```text
-/mnt/c/WINDOWS/system32
-```
-
-Executar comandos a partir desse diretorio pode causar erro de permissao porque o Windows protege pastas do sistema.
-
-Antes de executar qualquer comando, volte para sua home Linux:
-
-```bash
-cd ~
-```
-
 
 
 ### Atualizar o Ubuntu
@@ -144,17 +122,62 @@ sudo apt update
 sudo apt upgrade -y
 ```
 
-O comando `apt update` atualiza a lista de pacotes disponiveis. O comando `apt upgrade -y` atualiza os pacotes ja instalados.
+O comando `apt update` atualiza a lista de pacotes disponíveis. O comando `apt upgrade -y` atualiza os pacotes já instalados.
 
-Instale tambem utilitarios basicos usados pelos comandos de instalacao:
+### Reiniciar o WSL após a atualização
+
+
+> Na primeira instalação, o `apt upgrade` pode atualizar componentes do próprio
+> WSL e do `systemd`. Reinicie o WSL antes de instalar as dependências para que
+> a nova sessão carregue todas as versões atualizadas.
+
+Primeiro, saia do Ubuntu:
 
 ```bash
-sudo apt install -y ca-certificates curl wget gnupg lsb-release software-properties-common apt-transport-https
+exit
 ```
 
-### Instalar dependencias comuns
+De volta ao **PowerShell do Windows**, encerre completamente o WSL:
 
-Os READMEs dos laboratorios explicam a execucao de cada experimento, mas alguns pacotes sao usados antes ou ao redor deles.
+```powershell
+wsl --shutdown
+```
+
+Depois que o comando terminar, abra uma nova sessão:
+
+```powershell
+wsl
+```
+
+O comando `wsl --shutdown` fecha todas as distribuições WSL em execução. Para
+abrir novamente, você também pode usar o Ubuntu pelo menu Iniciar em vez do
+comando `wsl`.
+
+### Abrir o Ubuntu
+
+Você pode abrir o Ubuntu pelo menu Iniciar do Windows ou digitando no PowerShell:
+
+```powershell
+wsl
+```
+
+Não execute comandos dentro de pastas do sistema do Windows, como:
+
+```text
+/mnt/c/WINDOWS/system32
+```
+
+Executar comandos a partir desse diretório pode causar erro de permissão porque o Windows protege pastas do sistema.
+
+Antes de executar qualquer comando, volte para sua home Linux:
+
+```bash
+cd ~
+```
+
+### Instalar dependências comuns
+
+Os READMEs dos laboratórios explicam a execução de cada experimento, mas alguns pacotes são usados antes ou ao redor deles.
 
 Instale o conjunto comum abaixo no Ubuntu WSL2:
 
@@ -171,19 +194,19 @@ sudo apt install -y \
   dwarves pahole trace-cmd tmux vim nano file
 ```
 
-Durante a instalacao, o pacote complementar `iperf3` pode abrir uma tela perguntando:
+Durante a instalação, o pacote complementar `iperf3` pode abrir uma tela perguntando:
 
 ```text
 Start Iperf3 as a daemon automatically?
 ```
 
-Escolha `<No>`. Use `Tab` para alternar entre as opcoes e `Enter` para confirmar. Os três laboratorios atuais não utilizam o `iperf3`, então ele não precisa ficar rodando automaticamente no Ubuntu/WSL2.
+Escolha `<No>`. Use `Tab` para alternar entre as opções e `Enter` para confirmar. Os três laboratórios atuais não utilizam o `iperf3`, então ele não precisa ficar rodando automaticamente no Ubuntu/WSL2.
 
-O Lab 1 depende do BTF do kernel. Esse requisito aparece em [Cuidados especificos no WSL2](#cuidados-especificos-no-wsl2) e nas solucoes de problemas.
+O Lab 1 depende do BTF do kernel. Esse requisito aparece em [Cuidados específicos no WSL2](#cuidados-específicos-no-wsl2) e nas soluções de problemas.
 
 ### Instalar e testar o Docker
 
-Antes de instalar o Docker, garanta que o `apt update` nao esta falhando:
+Antes de instalar o Docker, garanta que o `apt update` não está falhando:
 
 ```bash
 sudo apt update
@@ -198,7 +221,7 @@ sudo sh get-docker.sh
 
 O instalador pode avisar que detectou WSL e recomendar Docker Desktop. Para este ambiente, continue com o Docker Engine dentro do Ubuntu WSL2.
 
-### Instalar e testar o Containerlab
+### Instalar o Containerlab
 
 Instale o Containerlab:
 
@@ -206,10 +229,10 @@ Instale o Containerlab:
 bash -c "$(curl -sL https://get.containerlab.dev)"
 ```
 
-### Clonar o repositorio
+### Clonar o repositório
 
 
-Clone o repositorio:
+Clone o repositório:
 
 ```bash
 git clone https://github.com/ElisaAndradedeJesus/ebpf-grad-labs.git
@@ -217,18 +240,18 @@ cd ebpf-grad-labs
 
 ```
 
-Confirme onde voce esta:
+Confirme onde você está:
 
 ```bash
 pwd
 ls
 ```
 
-O caminho deve estar dentro de `/home/seu_usuario/ebpf-grad-labs`, nao em `/mnt/c/...`.
+O caminho deve estar dentro de `/home/seu_usuario/ebpf-grad-labs`, não em `/mnt/c/...`.
 
-## Laboratorios disponiveis
+## Laboratórios disponíveis
 
-Os laboratorios devem ser executados na ordem abaixo. Cada pasta possui um README próprio com preparação, testes, resultados esperados e limpeza.
+Cada pasta possui um README próprio com preparação, testes, resultados esperados e limpeza.
 
 1. [Lab 1 — Kprobe e BPF LSM](Lab1-Tipos_eBPF/README.md): compara observabilidade com Kprobe e bloqueio com BPF LSM.
 2. [Lab 2 — XDP ingress e TC egress](Lab2-XDP_vs_TC/README.md): compara o descarte de tráfego no ingresso e na saída.
@@ -236,44 +259,44 @@ Os laboratorios devem ser executados na ordem abaixo. Cada pasta possui um READM
 
 ## Por que WSL2
 
-WSL2 permite executar Linux no Windows 11 com um kernel Linux real, sem depender de uma maquina virtual tradicional. Para esta disciplina, isso e util porque os laboratorios usam Docker, Containerlab, eBPF, XDP, `bpftool`, `clang`, `libbpf` e ferramentas de rede Linux.
+WSL2 permite executar Linux no Windows 11 com um kernel Linux real, sem depender de uma máquina virtual tradicional. Para esta disciplina, isso é útil porque os laboratórios usam Docker, Containerlab, eBPF, XDP, `bpftool`, `clang`, `libbpf` e ferramentas de rede Linux.
 
 Vantagens:
 
 - usa ambiente Linux sem trocar o sistema operacional principal;
 - permite executar Docker e Containerlab dentro do Ubuntu;
-- oferece suporte a recursos Linux necessarios para os laboratorios.
+- oferece suporte a recursos Linux necessários para os laboratórios.
 
-Limitacoes:
+Limitações:
 
-- o kernel do WSL2 nao é um kernel Ubuntu generico;
-- alguns pacotes `linux-tools-$(uname -r)` podem nao existir para kernels Microsoft do WSL2;
-- recursos eBPF dependem do suporte oferecido pelo kernel e de permissao de administrador dentro do Linux;
+- o kernel do WSL2 não é um kernel Ubuntu genérico;
+- alguns pacotes `linux-tools-$(uname -r)` podem não existir para kernels Microsoft do WSL2;
+- recursos eBPF dependem do suporte oferecido pelo kernel e de permissão de administrador dentro do Linux;
 
-## Cuidados especificos no WSL2
+## Cuidados específicos no WSL2
 
 ### Trabalhe dentro de `/home`
 
-Dê preferencia a executar builds e laboratórios dentro do repositório do projeto:
+Dê preferência a executar builds e laboratórios dentro do repositório do projeto:
 
 ```bash
 cd ~/ebpf-grad-labs
 ```
 
-Alem de permissoes diferentes, o desempenho de I/O costuma ser pior e alguns scripts podem falhar ao montar volumes ou criar arquivos.
+Além de permissões diferentes, o desempenho de I/O costuma ser pior e alguns scripts podem falhar ao montar volumes ou criar arquivos.
 
 ### Use `sudo` nos comandos de Docker e Containerlab
 
-Os laboratorios assumem comandos com privilegios. Prefira:
+Os laboratórios assumem comandos com privilégios. Prefira:
 
 ```bash
 sudo docker ps
 sudo containerlab version
 ```
 
-### Inicie o Docker ao abrir uma nova sessao WSL
+### Inicie o Docker ao abrir uma nova sessão WSL
 
-Se o Docker nao estiver ativo:
+Se o Docker não estiver ativo:
 
 ```bash
 sudo service docker start
@@ -287,7 +310,7 @@ sudo docker ps
 
 ### Cuidado com `linux-tools-$(uname -r)`
 
-No WSL2, `uname -r` pode retornar um kernel Microsoft. Nesses casos, pacotes como `linux-tools-$(uname -r)` ou `linux-cloud-tools-$(uname -r)` podem nao existir nos repositorios Ubuntu.
+No WSL2, `uname -r` pode retornar um kernel Microsoft. Nesses casos, pacotes como `linux-tools-$(uname -r)` ou `linux-cloud-tools-$(uname -r)` podem não existir nos repositórios Ubuntu.
 
 Quando isso acontecer, use primeiro:
 
@@ -295,7 +318,7 @@ Quando isso acontecer, use primeiro:
 sudo apt install -y bpftool linux-tools-common linux-tools-generic
 ```
 
-Se um script tentar instalar ferramentas exatamente para o kernel WSL e falhar, verifique se o comando era apenas auxiliar para disponibilizar `bpftool`. Em muitos casos, o `bpftool` generico ou o `bpftool` dentro da imagem Docker do laboratorio e suficiente.
+Se um script tentar instalar ferramentas exatamente para o kernel WSL e falhar, verifique se o comando era apenas auxiliar para disponibilizar `bpftool`. Em muitos casos, o `bpftool` genérico ou o `bpftool` dentro da imagem Docker do laboratório é suficiente.
 
 ### Confirme BTF antes dos labs com CO-RE
 
@@ -305,20 +328,20 @@ Alguns programas precisam de `/sys/kernel/btf/vmlinux` para gerar `vmlinux.h`.
 ls -lh /sys/kernel/btf/vmlinux
 ```
 
-Se o arquivo nao existir, atualize o WSL no PowerShell:
+Se o arquivo não existir, atualize o WSL no PowerShell:
 
 ```powershell
 wsl --update
 wsl --shutdown
 ```
 
-Abra o Ubuntu novamente e repita a verificacao.
+Abra o Ubuntu novamente e repita a verificação.
 
-## Solucoes de problemas
+## Soluções de problemas
 
 ### `Permission denied` ao clonar ou executar comandos
 
-Verifique onde voce esta:
+Verifique onde você está:
 
 ```bash
 pwd
@@ -330,47 +353,47 @@ Se estiver em `/mnt/c/WINDOWS/system32` ou outra pasta protegida do Windows, vol
 cd ~
 ```
 
-Clone e execute o repositorio dentro de `/home/seu_usuario`.
+Clone e execute o repositório dentro de `/home/seu_usuario`.
 
-### Docker daemon nao esta rodando
+### Docker daemon não está rodando
 
 ```bash
 sudo service docker start
 sudo docker info
 ```
 
-### Docker sem permissao
+### Docker sem permissão
 
-Use `sudo`, que e o padrao deste guia:
+Use `sudo`, que é o padrão deste guia:
 
 ```bash
 sudo docker ps
 sudo docker run --rm hello-world
 ```
 
-### Containerlab nao encontrado
+### Containerlab não encontrado
 
 ```bash
 containerlab version
 which containerlab
 ```
 
-Se nao existir, reinstale:
+Se não existir, reinstale:
 
 ```bash
 bash -c "$(curl -sL https://get.containerlab.dev)"
 ```
 
-### `bpftool` nao encontrado
+### `bpftool` não encontrado
 
 ```bash
 which bpftool
 sudo apt install -y bpftool linux-tools-common linux-tools-generic
 ```
 
-Em kernels WSL2, evite depender exclusivamente de `linux-tools-$(uname -r)`, porque esse pacote pode nao existir.
+Em kernels WSL2, evite depender exclusivamente de `linux-tools-$(uname -r)`, porque esse pacote pode não existir.
 
-### `/sys/kernel/btf/vmlinux` nao existe
+### `/sys/kernel/btf/vmlinux` não existe
 
 ```bash
 ls -lh /sys/kernel/btf/vmlinux
@@ -386,7 +409,7 @@ wsl --shutdown
 
 Depois abra o Ubuntu novamente.
 
-### Limpar um laboratorio que permaneceu ativo
+### Limpar um laboratório que permaneceu ativo
 
 Entre na pasta do laboratório atual e utilize o alvo de limpeza correspondente:
 
@@ -407,9 +430,9 @@ Confira containers restantes:
 sudo docker ps -a
 ```
 
-## Referencias
+## Referências
 
-- Repositorio da disciplina: https://github.com/nerds-ufes/Prog-Networks-2026
+- Repositório da disciplina: https://github.com/nerds-ufes/Prog-Networks-2026
 - Microsoft WSL: https://learn.microsoft.com/windows/wsl/install
 - Docker Engine no Ubuntu: https://docs.docker.com/engine/install/ubuntu/
 - Containerlab: https://containerlab.dev/install/
