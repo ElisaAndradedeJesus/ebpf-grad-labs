@@ -354,7 +354,7 @@ O caminho deve estar dentro de `/home/seu_usuario/ebpf-grad-labs`, não em `/mnt
 
 ## Laboratórios disponíveis
 
-Cada pasta possui um README próprio com preparação, testes, resultados esperados e limpeza.
+Cada pasta possui um README próprio com preparação, testes e resultados esperados.
 
 1. [Lab 1 — Kprobe e BPF LSM](Lab1-Tipos_eBPF/README.md): compara observabilidade com Kprobe e bloqueio com BPF LSM.
 2. [Lab 2 — XDP ingress e TC egress](Lab2-XDP_vs_TC/README.md): compara o descarte de tráfego no ingresso e na saída.
