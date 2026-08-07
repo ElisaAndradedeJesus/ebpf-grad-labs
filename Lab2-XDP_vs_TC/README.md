@@ -7,30 +7,53 @@ Neste laboratório, vamos comparar dois pontos de processamento de pacotes no ke
 
 O experimento utiliza XDP para descartar ICMP no ingresso de `h1` e TC para descartar TCP destinado à porta 80 na saída de `h2`.
 
-## Diagrama de Fluxo: XDP vs. TC (Ingress e Egress)
+## Diagrama de Fluxo: XDP vs. TC 
 
-O diagrama abaixo ilustra a jornada de um pacote subindo para a aplicação (Ingress) e descendo para a placa de rede (Egress). Observe a fronteira crítica de alocação de memória e onde cada programa eBPF é executado.
+O diagrama abaixo ilustra a jornada de um pacote. Primeiro, observamos o fluxo de entrada (Ingress), subindo do hardware até a aplicação. Em seguida, o fluxo de saída (Egress), descendo da aplicação de volta para o hardware. Observe onde cada programa eBPF é executado em relação à alocação de memória.
 
-| ⬇️ INGRESS (Entrada de Dados) | ⬆️ EGRESS (Saída de Dados) |
-| :--- | :--- |
-| **🏢 Aplicação (Userspace)**<br>Recebe os dados processados | **🏢 Aplicação (Userspace)**<br>Gera os dados e inicia o envio |
-| ⬆ | ⬇ |
-| **🔌 Camada de Sockets**<br>Lê do socket | **🔌 Camada de Sockets**<br>Escreve no socket |
-| ⬆ | ⬇ |
-| **🧠 Pilha de Rede do Kernel**<br>Roteamento IP, TCP/UDP, Netfilter | **🧠 Pilha de Rede do Kernel**<br>Roteamento IP, TCP/UDP, Netfilter |
-| ⬆ | ⬇ |
-| 🔵 **Hook: TC (Ingress)**<br>*Contexto: `sk_buff` (Dados + Metadados)*<br>*Ações: OK, SHOT, REDIRECT* | 🔵 **Hook: TC (Egress)**<br>*Contexto: `sk_buff` (Dados + Metadados)*<br>*Ações: OK, SHOT, REDIRECT* |
-| ⬆ | ⬇ |
-| ⚠️ **Fronteira de Memória**<br>*Kernel aloca a estrutura `sk_buff`* | ⚠️ **Fronteira de Memória**<br>*Kernel libera a estrutura `sk_buff`* |
-| ⬆ | ⬇ |
-| 🟢 **Hook: XDP**<br>*Contexto: `xdp_md` (Dados Brutos)*<br>*Ações: PASS, DROP, TX, REDIRECT* | ❌ *(Não há hook XDP no fluxo normal de Egress gerado pelo Kernel)* |
-| ⬆ | ⬇ |
-| **⚙️ Driver da Placa de Rede (NIC)** | **⚙️ Driver da Placa de Rede (NIC)** |
-| ⬆ | ⬇ |
-| **🌐 Mídia Física (Cabo / Wi-Fi)**<br>Pacote chega ao servidor | **🌐 Mídia Física (Cabo / Wi-Fi)**<br>Pacote sai do servidor |
+### 1. Fluxo de Entrada (INGRESS)
+
+| ⬇️ INGRESS (Subindo para a Aplicação) |
+| :--- |
+| **🌐 Mídia Física (Cabo / Wi-Fi)**<br>Pacote chega ao servidor |
+| ⬇ |
+| **⚙️ Driver da Placa de Rede (NIC)** |
+| ⬇ |
+| 🟢 **Hook: XDP**<br>*Contexto: `xdp_md` (Dados Brutos)*<br>*Ações: PASS, DROP, TX, REDIRECT* |
+| ⬇ |
+| ⚠️ **Fronteira de Memória**<br>*Kernel aloca a estrutura `sk_buff`* |
+| ⬇ |
+| 🔵 **Hook: TC (Ingress)**<br>*Contexto: `sk_buff` (Dados + Metadados)*<br>*Ações: OK, SHOT, REDIRECT* |
+| ⬇ |
+| **🧠 Pilha de Rede do Kernel**<br>Roteamento IP, TCP/UDP, Netfilter |
+| ⬇ |
+| **🔌 Camada de Sockets**<br>Lê do socket |
+| ⬇ |
+| **🏢 Aplicação (Userspace)**<br>Recebe os dados processados |
+
+<br>
+
+### 2. Fluxo de Saída (EGRESS)
+
+| ⬇️ EGRESS (Descendo para a Rede) |
+| :--- |
+| **🏢 Aplicação (Userspace)**<br>Gera os dados e inicia o envio |
+| ⬇ |
+| **🔌 Camada de Sockets**<br>Escreve no socket |
+| ⬇ |
+| **🧠 Pilha de Rede do Kernel**<br>Roteamento IP, TCP/UDP, Netfilter |
+| ⬇ |
+| 🔵 **Hook: TC (Egress)**<br>*Contexto: `sk_buff` (Dados + Metadados)*<br>*Ações: OK, SHOT, REDIRECT* |
+| ⬇ |
+| ⚠️ **Fronteira de Memória**<br>*Kernel libera a estrutura `sk_buff`* |
+| ⬇ |
+| ❌ *(Não há hook XDP no fluxo normal de Egress gerado pelo Kernel)* |
+| ⬇ |
+| **⚙️ Driver da Placa de Rede (NIC)** |
+| ⬇ |
+| **🌐 Mídia Física (Cabo / Wi-Fi)**<br>Pacote sai do servidor |
 
 > **Observação Importante sobre Egress:** O XDP atua **apenas** no Ingress (recebimento). Embora o XDP possa enviar um pacote de volta pela mesma placa (usando a ação `XDP_TX`) ou redirecionar para outra (usando `XDP_REDIRECT`), um pacote que nasce na sua aplicação (*Userspace*) e desce a pilha de rede passará pelo **TC Egress**, mas **não** passará por um hook XDP ao sair.
-
 
 ### Modo XDP utilizado no laboratório
 
