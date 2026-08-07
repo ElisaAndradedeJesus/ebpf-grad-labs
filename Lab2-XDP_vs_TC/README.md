@@ -91,6 +91,8 @@ A rede experimental `10.10.12.0/24` é diferente da rede administrativa do Conta
 - `tc_egress_drop.bpf.c`: retorna `TC_ACT_SHOT` para TCP com destino à porta 80;
 - `Makefile`: verifica, compila, executa, testa e limpa o laboratório.
 
+[Consulte uma explicação mais detalhada sobre os códigos eBPF aqui](CODES.md)
+
 ## Ferramentas de visualização
 
 O laboratório utiliza ferramentas de terminal instaladas automaticamente nos containers:
