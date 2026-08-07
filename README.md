@@ -1,6 +1,6 @@
 # 🚀 Laboratórios Práticos de eBPF: Programação Nativa no Kernel Linux
 
-Bem-vindos à disciplina prática de **eBPF (Extended Berkeley Packet Filter)**. Este repositório contém laboratórios progressivos sobre observabilidade, segurança e processamento de pacotes no Kernel Linux. Os experimentos de rede utilizam ambientes isolados com o **Containerlab**.
+Este repositório contém laboratórios progressivos sobre observabilidade, segurança e processamento de pacotes no Kernel Linux. Os experimentos de rede utilizam ambientes isolados com o **Containerlab**.
 
 > **Ambiente-alvo:** estes laboratórios foram projetados e devem ser validados no Windows 11 com **WSL 2**, Ubuntu, Docker Engine e Containerlab. A execução em outras distribuições ou diretamente sobre Linux pode exigir adaptações nos hooks, caminhos e recursos oferecidos pelo kernel.
 
@@ -49,7 +49,7 @@ Historicamente, o sistema operacional é dividido em dois espaços por motivos d
 1. **User Space (Espaço do Usuário):** Onde rodam suas aplicações normais (navegadores, bancos de dados, scripts Python).
 2. **Kernel Space (Espaço do Núcleo):** O coração do sistema operacional, que tem acesso irrestrito ao hardware (CPU, memória, placas de rede).
 
-Se você quisesse adicionar uma funcionalidade profunda ao Kernel (como um novo algoritmo de rede ou uma ferramenta de telemetria), precisava escrever um **Módulo de Kernel (LKM)**. O problema é que um único erro de ponteiro em um Módulo de Kernel causa um *Kernel Panic*, travando e reiniciando a máquina inteira.
+Se você quisesse adicionar uma funcionalidade ao Kernel (como um novo algoritmo de rede ou uma ferramenta de telemetria), precisava escrever um **Módulo de Kernel (LKM)**. O problema é que um único erro de ponteiro em um Módulo de Kernel causa um *Kernel Panic*, travando e reiniciando a máquina inteira.
 
 **O eBPF oferece uma alternativa para muitos desses casos.** Ele é frequentemente comparado ao "JavaScript do Kernel". A comparação ajuda a transmitir a ideia de código carregado dinamicamente em um ambiente controlado, mas não deve ser interpretada literalmente: programas eBPF possuem tipos, pontos de anexação e recursos rigorosamente limitados pelo Kernel.
 
@@ -86,7 +86,7 @@ um evento aciona o programa
 o programa observa, permite, descarta ou bloqueia uma operação
 ```
 
-O arquivo `.bpf.o` gerado pelo Clang é um objeto ELF. Ele contém o bytecode que será apresentado ao Kernel e também pode conter definições de Maps. Uma ferramenta no userspace, como `bpftool`, solicita o carregamento e a anexação.
+O arquivo `.bpf.o` gerado pelo Clang — um compilador responsável por traduzir o código escrito em C para o bytecode eBPF compreensível pelo sistema — é um objeto no formato ELF (Executable and Linkable Format), que funciona como um envelope padronizado para organizar e empacotar essas instruções de baixo nível junto com as definições de estruturas de dados (Maps). Como esse arquivo estruturado não se autoexecuta, o ciclo se completa com o uso de uma ferramenta de espaço de usuário (userspace) como o `bpftool`, um utilitário oficial de linha de comando que faz a ponte com o sistema operacional para solicitar ao Kernel que carregue o código de forma segura e realize a anexação do programa aos eventos desejados.
 
 Carregar e anexar são ações diferentes:
 
@@ -114,13 +114,34 @@ Ser aceito pelo Verifier significa que o programa respeita as regras de seguran�
 
 ## 🏗️ O Contrato com o Kernel: Tipos de Programas
 
-Os tipos de programas eBPF (*program types*) definem o "contrato" entre o seu código e o Kernel do Linux. Cada tipo determina onde o programa pode ser anexado, quais *helpers* (funções auxiliares) ele pode chamar e qual é o formato do contexto (os dados de entrada) que ele recebe.
+Os tipos de programas eBPF (*program types*, classificados internamente pela enumeração `bpf_prog_type`) estabelecem um "contrato" rigoroso entre o seu código e o Kernel do Linux. É com base nesse contrato que o *eBPF Verifier* analisa e autoriza a execução do código. 
+
+Cada tipo determina três pilares fundamentais: 
+- O **ponto de anexo**: quando e onde o programa será engatilhado;
+- A **estrutura do contexto**: os dados de entrada fornecidos ao programa (como registradores da CPU ou metadados de pacotes);
+- Quais **helpers** (funções auxiliares do Kernel) o programa está autorizado a invocar.
 
 Eles são divididos nas seguintes categorias principais:
 
-1. **Networking (Rede):** A categoria mais popular, onde o eBPF brilha ao processar pacotes em alta velocidade. Inclui o **XDP** (executado no driver da placa de rede) e o **TC** (Traffic Control, anexado à camada de roteamento do kernel).
-2. **Tracing e Monitoramento:** Permitem observar o comportamento interno do sistema operacional e de aplicações em tempo real, sem reinicialização. Inclui o **Kprobe**, que permite anexar código eBPF a quase qualquer função interna do Kernel.
-3. **Segurança e Controle de Acesso:** Focados em garantir que o sistema opere dentro de políticas permitidas. Inclui o **LSM (Linux Security Modules)**, que permite criar políticas para vetar operações diretamente nos ganchos de segurança do sistema.
+### 1. Networking (Rede)
+A categoria responsável por transformar o Linux em um roteador ou firewall de altíssima performance, atuando em diferentes camadas da pilha de rede.
+
+* **XDP (*eXpress Data Path*):** Executado na camada mais baixa possível, diretamente no driver da placa de rede. Ele processa os pacotes *antes* que o Kernel aloque memória para eles (estrutura `sk_buff`), sendo ideal para balanceamento de carga extremo e mitigação de ataques DDoS.
+* **TC (*Traffic Control*):** Anexado mais acima na camada de roteamento do Kernel. Como o pacote já possui um `sk_buff` alocado, o TC permite manipulações mais complexas, modelagem de tráfego (*traffic shaping*) e políticas de controle direcional (*ingress/egress*).
+* **Cgroup / Socket Filters:** Programas que aplicam políticas de rede em nível de socket ou vinculadas a *Control Groups* (Cgroups), essenciais para isolamento de rede em containers.
+
+### 2. Tracing, Observabilidade e Monitoramento
+Permitem a instrumentação dinâmica para observar o comportamento interno do sistema e de aplicações em tempo real, sem necessidade de reinicialização ou alteração de código.
+
+* **Kprobes e Kretprobes:** Permitem rastrear a entrada e a saída de praticamente qualquer função interna do Kernel.
+* **Tracepoints:** Ganchos estáticos e altamente estáveis embutidos pelos desenvolvedores do Kernel.
+* **Uprobes e Uretprobes:** Estendem essa mesma capacidade de inspeção para o espaço de usuário (*userspace*), permitindo rastrear funções dentro de binários de aplicações (como bancos de dados ou apps Go/Node.js).
+
+### 3. Segurança e Controle de Acesso
+Focados em auditoria, isolamento e em garantir que o sistema opere estritamente dentro das políticas permitidas.
+
+* **eBPF LSM (*Linux Security Modules*):** Permite criar políticas de segurança dinâmicas e de granularidade fina conectadas diretamente aos mesmos ganchos oficiais do Kernel usados pelo SELinux ou AppArmor (vetando operações suspeitas de arquivos ou rede antes que aconteçam).
+* **Cgroups de Segurança:** Programas de controle de acesso para restringir operações específicas (como acesso a dispositivos de hardware) por containers individualmente.
 
 O Kernel impõe restrições rígidas por segurança. Um programa de tracing acessa somente o contexto e os helpers permitidos para seu tipo e não pode assumir as capacidades de um programa de rede. Da mesma forma, um programa XDP recebe o contexto do pacote e não o contexto de uma operação de abertura de arquivo.
 
