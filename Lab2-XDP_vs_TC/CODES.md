@@ -1,4 +1,4 @@
-# Análise dos códigos eBPF: XDP vs TC
+# Análise Prática: XDP vs TC no eBPF
 
 Neste laboratório, comparamos dois programas eBPF reais: um firewall de entrada escrito em **XDP** e um filtro de saída escrito em **TC**. 
 
@@ -33,6 +33,19 @@ int xdp_firewall(struct xdp_md *ctx)
     
     // REGRA DE OURO DO eBPF (Verificador): Você deve provar que não vai ler lixo na memória.
     // "Se o final do cabeçalho ethernet ultrapassar o fim do pacote, aborte."
+    /* 
+     * ENTENDENDO A MATEMÁTICA: (eth + 1)
+     * Como 'eth' é um ponteiro para 'struct ethhdr' (que tem exatos 14 bytes),
+     * a linguagem C entende "+ 1" como "pule 1 bloco de 14 bytes para frente".
+     * Ou seja, (eth + 1) aponta para o exato primeiro byte APÓS o Ethernet.
+     * O (void *) serve apenas para converter para um endereço genérico comparável.
+     * 
+     * A VERIFICAÇÃO DE LIMITE:
+     * O eBPF Verifier nos obriga a perguntar: "Se eu avançar esses 14 bytes, 
+     * eu vou acabar caindo fora da memória do pacote (data_end)?"
+     * Se sim, o pacote está quebrado ou incompleto. Ignoramos (XDP_PASS).
+     */
+
     if ((void *)(eth + 1) > data_end) 
         return XDP_PASS;
 
@@ -46,6 +59,16 @@ int xdp_firewall(struct xdp_md *ctx)
     struct iphdr *iph = (void *)(eth + 1);
     
     // Verificador de segurança do eBPF novamente para o cabeçalho IP:
+    /* 
+     * ENTENDENDO O PASSE DE SEGURANÇA: (iph + 1)
+     * A estrutura 'struct iphdr' tem um tamanho estático de 20 bytes no Linux.
+     * Sabemos que cabeçalhos IP podem ser maiores que 20 bytes (devido a opções),
+     * então (iph + 1) NÃO serve para pular o IP inteiro de forma dinâmica!
+     * 
+     * Ele serve apenas como um PASSE DE SEGURANÇA. Estamos provando ao Verifier:
+     * "Eu garanto que este espaço de memória tem, no mínimo, 20 bytes de tamanho".
+     * Apenas após essa prova, o Kernel nos autoriza a ler o campo iph->protocol.
+     */
     if ((void *)(iph + 1) > data_end) 
         return XDP_PASS;
 
