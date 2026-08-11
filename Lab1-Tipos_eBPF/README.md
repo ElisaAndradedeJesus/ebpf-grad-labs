@@ -27,11 +27,186 @@ ls
 
 O resultado de `pwd` deve terminar em `/ebpf-grad-labs`, e o comando `ls` deve mostrar o diretório `Lab1-Tipos_eBPF`.
 
+## Habilitar o BPF LSM no WSL 2
+
+Este laboratório possui duas partes. O Kprobe funciona sem o BPF LSM, mas o
+experimento que bloqueia a execução do `curl` exige que o LSM `bpf` esteja
+ativo desde a inicialização do kernel.
+
+### 1. Verifique os LSMs ativos
+
+Primeiro, confirme que o `securityfs` está montado:
+
+```bash
+sudo mkdir -p /sys/kernel/security
+mountpoint -q /sys/kernel/security || \
+sudo mount -t securityfs securityfs /sys/kernel/security
+```
+
+Consulte os Linux Security Modules ativos:
+
+```bash
+sudo cat /sys/kernel/security/lsm
+```
+
+Se a saída contiver `bpf`, nenhuma alteração é necessária. Continue em
+[Executar o laboratório](#executar-o-laboratório).
+
+Se `bpf` não aparecer, siga as próximas etapas.
+
+### 2. Verifique o suporte do kernel
+
+O BPF LSM precisa estar incluído na configuração usada para compilar o kernel:
+
+```bash
+zgrep '^CONFIG_BPF_LSM=' /proc/config.gz 2>/dev/null || \
+grep '^CONFIG_BPF_LSM=' /boot/config-"$(uname -r)" 2>/dev/null
+```
+
+O resultado esperado é:
+
+```text
+CONFIG_BPF_LSM=y
+```
+
+Se nenhum dos arquivos de configuração estiver disponível, isso não prova que
+o recurso está ausente. Atualize o WSL pelo PowerShell:
+
+```powershell
+wsl --update
+wsl --shutdown
+```
+
+Abra novamente o Ubuntu e repita a verificação.
+
+Se o resultado for:
+
+```text
+# CONFIG_BPF_LSM is not set
+```
+
+o kernel atual não possui suporte ao BPF LSM. Nesse caso, será necessário
+utilizar uma versão atualizada do kernel do WSL ou um kernel personalizado
+compilado com `CONFIG_BPF_LSM=y`.
+
+### 3. Ative o BPF LSM na inicialização
+
+> Esta configuração é realizada no Windows e se aplica globalmente às
+> distribuições executadas com WSL 2.
+
+No PowerShell, abra o arquivo `.wslconfig`:
+
+```powershell
+notepad $env:USERPROFILE\.wslconfig
+```
+
+Se o arquivo não existir, o Bloco de Notas perguntará se deseja criá-lo.
+
+Adicione:
+
+```ini
+[wsl2]
+kernelCommandLine=lsm=landlock,lockdown,yama,integrity,apparmor,bpf
+```
+
+Se o arquivo já possuir uma seção `[wsl2]`, não crie outra: adicione somente
+a propriedade `kernelCommandLine` dentro da seção existente.
+
+Se já existir uma propriedade `kernelCommandLine`, preserve os outros
+parâmetros. Caso ela ainda não possua `lsm=`, acrescente o parâmetro na mesma
+linha, separado por espaço. Caso já possua `lsm=`, não crie um segundo:
+acrescente `bpf` à lista existente.
+
+> O parâmetro `lsm=` define a lista de módulos de segurança habilitados durante
+> a inicialização. Não utilize apenas `lsm=bpf`, pois isso pode retirar outros
+> mecanismos de segurança da lista.
+
+Salve e feche o arquivo.
+
+### 4. Reinicie o WSL 2
+
+Feche trabalhos em execução nas distribuições WSL. Em seguida, execute no
+PowerShell:
+
+```powershell
+wsl --shutdown
+```
+
+Esse comando encerra todas as distribuições WSL abertas. Depois, abra
+novamente o Ubuntu.
+
+### 5. Confirme a ativação
+
+No Ubuntu, verifique se o parâmetro foi recebido pelo kernel:
+
+```bash
+cat /proc/cmdline
+```
+
+A saída deve conter:
+
+```text
+lsm=landlock,lockdown,yama,integrity,apparmor,bpf
+```
+
+Monte o `securityfs`, caso necessário:
+
+```bash
+sudo mkdir -p /sys/kernel/security
+mountpoint -q /sys/kernel/security || \
+sudo mount -t securityfs securityfs /sys/kernel/security
+```
+
+Confira novamente os LSMs ativos:
+
+```bash
+sudo cat /sys/kernel/security/lsm
+```
+
+A lista deve conter `bpf`. Por exemplo:
+
+```text
+capability,landlock,lockdown,yama,integrity,apparmor,bpf
+```
+
+O módulo `capability` pode aparecer automaticamente mesmo sem estar escrito no
+parâmetro `lsm=`.
+
+Agora as duas partes do laboratório poderão ser executadas:
+
+```bash
+make setup
+make attach
+```
+
+Durante `make attach`, o resultado esperado para o teste do BPF LSM é:
+
+```text
+SUCESSO: a execução do curl foi bloqueada pelo BPF LSM.
+```
+
+### Restaurar a configuração anterior
+
+Para desfazer a ativação, abra novamente o arquivo no PowerShell:
+
+```powershell
+notepad $env:USERPROFILE\.wslconfig
+```
+
+Remova somente o parâmetro `lsm=...` adicionado por este laboratório, preserve
+as demais configurações e execute:
+
+```powershell
+wsl --shutdown
+```
+
 ## Arquivos do laboratório
 
 - `kprobe_exec.bpf.c`: registra a execução de processos;
 - `lsm_block.bpf.c`: tenta impedir a execução do `curl`;
 - `Makefile`: prepara, compila, carrega, testa e remove os programas.
+
+[Consulte uma explicação mais detalhada sobre os códigos eBPF aqui](CODES.md)
 
 O Makefile gera `vmlinux.h`, compila os programas e monta `bpffs` e `securityfs`
 caso ainda não estejam montados. `make attach` anexa os programas ao kernel,
@@ -89,8 +264,9 @@ Esse comando:
 
 1. carrega e anexa o Kprobe;
 2. verifica se BPF LSM está ativo;
-3. carrega e testa o programa BPF LSM quando o recurso está disponível;
-4. mantém os programas fixados em `/sys/fs/bpf/ebpf_lab1`.
+3. carrega o programa BPF LSM;
+4. tenta executar `curl --version` para comprovar o bloqueio;
+5. mantém os programas fixados em `/sys/fs/bpf/ebpf_lab1`.
 
 Quando aparecer a mensagem abaixo, os programas estarão anexados e continuarão
 ativos mesmo depois que o comando devolver o terminal:

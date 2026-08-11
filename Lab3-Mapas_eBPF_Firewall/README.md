@@ -66,6 +66,8 @@ Para cada pacote IPv4 recebido, o programa:
 - `xdp_fw_map.bpf.c`: declara a Hash Map e implementa a decisão do XDP;
 - `Makefile`: verifica o ambiente, compila, prepara, testa e limpa o laboratório.
 
+[Consulte uma explicação mais detalhada sobre o código eBPF aqui](CODES.md)
+
 ## Antes de começar
 
 Este passo a passo considera que o ambiente descrito no README principal já foi preparado e que o terminal está na raiz de `ebpf-grad-labs`.
