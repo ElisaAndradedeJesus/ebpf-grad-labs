@@ -149,12 +149,20 @@ A saída deve conter:
 lsm=landlock,lockdown,yama,integrity,apparmor,bpf
 ```
 
-Monte o `securityfs`, caso necessário:
+O comando `wsl --shutdown` encerra o kernel, e montagens realizadas manualmente
+podem não permanecer depois que o WSL for iniciado novamente. Por isso,
+verifique o `securityfs` outra vez. O bloco abaixo só realiza a montagem quando
+ela ainda não existe:
 
 ```bash
 sudo mkdir -p /sys/kernel/security
-mountpoint -q /sys/kernel/security || \
-sudo mount -t securityfs securityfs /sys/kernel/security
+
+if mountpoint -q /sys/kernel/security; then
+    echo "securityfs já está montado."
+else
+    sudo mount -t securityfs securityfs /sys/kernel/security
+    echo "securityfs foi montado."
+fi
 ```
 
 Confira novamente os LSMs ativos:
