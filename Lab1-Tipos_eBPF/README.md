@@ -15,25 +15,15 @@ Este passo a passo considera que:
 
 - o ambiente descrito no README principal já foi preparado;
 - `clang`, `gcc`, `bpftool` e `libbpf` estão instalados;
-- `/sys/kernel/btf/vmlinux` está disponível;
-- o usuário está na raiz do repositório `ebpf-grad-labs`.
+- `/sys/kernel/btf/vmlinux` está disponível.
 
-Confirme sua localização:
-
-```bash
-pwd
-ls
-```
-
-O resultado de `pwd` deve terminar em `/ebpf-grad-labs`, e o comando `ls` deve mostrar o diretório `Lab1-Tipos_eBPF`.
-
-## Habilitar o BPF LSM no WSL 2
+### Habilitar o BPF LSM no WSL 2
 
 Este laboratório possui duas partes. O Kprobe funciona sem o BPF LSM, mas o
 experimento que bloqueia a execução do `curl` exige que o LSM `bpf` esteja
 ativo desde a inicialização do kernel.
 
-### 1. Verifique os LSMs ativos
+#### 1. Verifique os LSMs ativos
 
 Primeiro, confirme que o `securityfs` está montado:
 
@@ -50,11 +40,11 @@ sudo cat /sys/kernel/security/lsm
 ```
 
 Se a saída contiver `bpf`, nenhuma alteração é necessária. Continue em
-[Executar o laboratório](#executar-o-laboratório).
+[Retorne ao repositório](#retorne-ao-repositório).
 
 Se `bpf` não aparecer, siga as próximas etapas.
 
-### 2. Verifique o suporte do kernel
+#### 2. Verifique o suporte do kernel
 
 O BPF LSM precisa estar incluído na configuração usada para compilar o kernel:
 
@@ -89,7 +79,7 @@ o kernel atual não possui suporte ao BPF LSM. Nesse caso, será necessário
 utilizar uma versão atualizada do kernel do WSL ou um kernel personalizado
 compilado com `CONFIG_BPF_LSM=y`.
 
-### 3. Ative o BPF LSM na inicialização
+#### 3. Ative o BPF LSM na inicialização
 
 > Esta configuração é realizada no Windows e se aplica globalmente às
 > distribuições executadas com WSL 2.
@@ -123,7 +113,7 @@ acrescente `bpf` à lista existente.
 
 Salve e feche o arquivo.
 
-### 4. Reinicie o WSL 2
+#### 4. Reinicie o WSL 2
 
 Feche trabalhos em execução nas distribuições WSL. Em seguida, execute no
 PowerShell:
@@ -135,7 +125,7 @@ wsl --shutdown
 Esse comando encerra todas as distribuições WSL abertas. Depois, abra
 novamente o Ubuntu.
 
-### 5. Confirme a ativação
+#### 5. Confirme a ativação
 
 No Ubuntu, verifique se o parâmetro foi recebido pelo kernel:
 
@@ -180,20 +170,10 @@ capability,landlock,lockdown,yama,integrity,apparmor,bpf
 O módulo `capability` pode aparecer automaticamente mesmo sem estar escrito no
 parâmetro `lsm=`.
 
-Agora as duas partes do laboratório poderão ser executadas:
+Quando `bpf` aparecer na lista, a ativação estará concluída e as duas partes
+do laboratório poderão ser executadas.
 
-```bash
-make setup
-make attach
-```
-
-Durante `make attach`, o resultado esperado para o teste do BPF LSM é:
-
-```text
-SUCESSO: a execução do curl foi bloqueada pelo BPF LSM.
-```
-
-### Restaurar a configuração anterior
+#### Restaurar a configuração anterior
 
 Para desfazer a ativação, abra novamente o arquivo no PowerShell:
 
@@ -207,6 +187,34 @@ as demais configurações e execute:
 ```powershell
 wsl --shutdown
 ```
+
+> **Está utilizando o Ubuntu instalado diretamente?**
+> O ambiente principal deste laboratório é o WSL 2, mas o BPF LSM também pode
+> ser habilitado em uma instalação convencional do Ubuntu por meio do GRUB.
+> Consulte [Habilitar o BPF LSM no Ubuntu instalado diretamente](#habilitar-o-bpf-lsm-no-ubuntu-instalado-diretamente).
+
+### Retorne ao repositório
+
+Depois de `wsl --shutdown`, o novo terminal Ubuntu normalmente será aberto no
+diretório inicial do usuário, e não na pasta em que o laboratório foi clonado.
+Entre novamente na raiz do repositório:
+
+```bash
+cd ~/ebpf-grad-labs
+```
+
+Se o repositório foi clonado em outro local, substitua o caminho acima pelo
+diretório correspondente.
+
+Confirme sua localização:
+
+```bash
+pwd
+ls
+```
+
+O resultado de `pwd` deve terminar em `/ebpf-grad-labs`, e o comando `ls` deve
+mostrar o diretório `Lab1-Tipos_eBPF`.
 
 ## Arquivos do laboratório
 
@@ -509,4 +517,133 @@ Depois, tente novamente:
 
 ```bash
 sudo cat /sys/kernel/tracing/trace_pipe
+```
+
+## Habilitar o BPF LSM no Ubuntu instalado diretamente
+
+> O ambiente principal deste laboratório é Ubuntu sobre WSL 2. Esta seção é
+> uma alternativa para instalações convencionais do Ubuntu Desktop ou Server
+> que utilizam o GRUB. Ubuntu Core, Raspberry Pi e sistemas com outro
+> bootloader podem exigir procedimentos diferentes.
+
+Em uma instalação convencional do Ubuntu, os parâmetros de inicialização são
+configurados no GRUB, e não no arquivo `.wslconfig` do Windows.
+
+### 1. Verifique o suporte do kernel
+
+Confirme se o kernel foi compilado com suporte ao BPF LSM:
+
+```bash
+zgrep '^CONFIG_BPF_LSM=' /proc/config.gz 2>/dev/null || \
+grep '^CONFIG_BPF_LSM=' /boot/config-"$(uname -r)" 2>/dev/null
+```
+
+O resultado esperado é:
+
+```text
+CONFIG_BPF_LSM=y
+```
+
+Se o resultado indicar `# CONFIG_BPF_LSM is not set`, o kernel atual não
+oferece esse recurso. Atualize o kernel por um mecanismo compatível com a
+versão do Ubuntu utilizada antes de continuar.
+
+### 2. Identifique os LSMs ativos
+
+Confirme que o `securityfs` está montado e consulte a lista atual:
+
+```bash
+sudo mkdir -p /sys/kernel/security
+
+if mountpoint -q /sys/kernel/security; then
+    echo "securityfs já está montado."
+else
+    sudo mount -t securityfs securityfs /sys/kernel/security
+    echo "securityfs foi montado."
+fi
+
+sudo cat /sys/kernel/security/lsm
+```
+
+Anote a lista exibida. O próximo passo deve preservar os LSMs existentes e
+acrescentar `bpf`. Não copie uma lista de outra máquina, pois os mecanismos
+disponíveis podem variar entre kernels e distribuições.
+
+Por exemplo, se a saída for:
+
+```text
+capability,landlock,lockdown,yama,integrity,apparmor
+```
+
+use no parâmetro de inicialização:
+
+```text
+lsm=landlock,lockdown,yama,integrity,apparmor,bpf
+```
+
+O LSM `capability` não precisa ser incluído no parâmetro `lsm=`, pois o kernel
+o ativa automaticamente.
+
+### 3. Adicione o parâmetro ao GRUB
+
+Crie um arquivo adicional de configuração, sem alterar diretamente
+`/etc/default/grub`:
+
+```bash
+sudo nano /etc/default/grub.d/99-bpf-lsm.cfg
+```
+
+Adicione uma única linha. Substitua a lista do exemplo pelos LSMs encontrados
+na etapa anterior, preserve a ordem deles e mantenha `bpf` ao final:
+
+```bash
+GRUB_CMDLINE_LINUX="${GRUB_CMDLINE_LINUX} lsm=landlock,lockdown,yama,integrity,apparmor,bpf"
+```
+
+No Nano, pressione `Ctrl+O`, `Enter` e `Ctrl+X` para salvar e sair.
+
+Atualize a configuração de inicialização:
+
+```bash
+sudo update-grub
+```
+
+O comando deve terminar sem erros. A alteração somente terá efeito depois da
+reinicialização.
+
+### 4. Reinicie e confirme a ativação
+
+Reinicie o Ubuntu:
+
+```bash
+sudo reboot
+```
+
+Depois que o sistema iniciar novamente, confirme que o kernel recebeu o
+parâmetro:
+
+```bash
+cat /proc/cmdline
+```
+
+A saída deve conter a lista `lsm=...` configurada na etapa anterior. Confira
+também os LSMs efetivamente ativos:
+
+```bash
+sudo cat /sys/kernel/security/lsm
+```
+
+A lista deve preservar os mecanismos anteriores e conter `bpf`. Quando isso
+acontecer, retorne à raiz do repositório e execute normalmente `make setup` e
+`make attach` conforme as instruções deste laboratório.
+
+### Restaurar a configuração anterior no Ubuntu
+
+Para desfazer somente a configuração criada por este laboratório, remova o
+arquivo `99-bpf-lsm.cfg`, atualize o GRUB e reinicie:
+
+```bash
+sudo rm /etc/default/grub.d/99-bpf-lsm.cfg
+sudo update-grub
+sudo reboot
 ```
