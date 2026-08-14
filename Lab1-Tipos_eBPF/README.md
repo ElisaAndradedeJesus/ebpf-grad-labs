@@ -1,4 +1,7 @@
 # Lab 1: Kprobe e BPF LSM na prática
+> **Uso do Containerlab:** o Lab 1 executa os programas eBPF diretamente no
+> kernel do WSL e não utiliza o Containerlab. O Containerlab é utilizado nos
+> Labs 2 e 3 para criar as topologias de rede dos experimentos.
 
 Neste laboratório, vamos comparar dois usos de eBPF relacionados ao comportamento do sistema operacional:
 
@@ -7,12 +10,8 @@ Neste laboratório, vamos comparar dois usos de eBPF relacionados ao comportamen
 
 O Kprobe será anexado à função `__x64_sys_execve` do kernel para registrar a execução de processos. Quando BPF LSM estiver ativo no kernel, o segundo programa tentará impedir a execução de `/usr/bin/curl`.
 
-> Este laboratório foi preparado para o ambiente x86-64 utilizado no curso, com Ubuntu sobre WSL 2. O nome da função observada pelo Kprobe pode ser diferente em outras arquiteturas ou versões do kernel.
+ Este laboratório foi preparado para o ambiente x86-64 utilizado no curso, com Ubuntu sobre WSL 2. O nome da função observada pelo Kprobe pode ser diferente em outras arquiteturas ou versões do kernel.
 
-> **Antes de executar o experimento com BPF LSM:** siga o guia
-> [Habilitar o BPF LSM](ATIVAR-BPF-LSM.md). O Kprobe funciona sem essa
-> configuração, mas o bloqueio do `curl` exige que o BPF LSM esteja ativo no
-> kernel.
 
 ## Antes de começar
 
@@ -22,6 +21,10 @@ Este passo a passo considera que:
 - `clang`, `gcc`, `bpftool` e `libbpf` estão instalados;
 - `/sys/kernel/btf/vmlinux` está disponível.
 
+> **Antes de executar o experimento com BPF LSM:** siga o guia
+> [Habilitar o BPF LSM](ATIVAR-BPF-LSM.md). O Kprobe funciona sem essa
+> configuração, mas o bloqueio do `curl` exige que o BPF LSM esteja ativo no
+> kernel.
 
 Confirme sua localização:
 
@@ -55,21 +58,18 @@ caso ainda não estejam montados. `make attach` anexa os programas ao kernel,
 Partindo da raiz do repositório:
 
 ```bash
-# Entra no diretório que contém os arquivos do Lab 1.
 cd Lab1-Tipos_eBPF
 ```
 
 Confira os arquivos:
 
 ```bash
-# Lista os arquivos do laboratório para confirmar a localização.
 ls
 ```
 
 ### 2. Conheça os comandos disponíveis
 
 ```bash
-# Exibe os alvos disponíveis no Makefile e a finalidade de cada um.
 make help
 ```
 
@@ -87,7 +87,6 @@ make check
 O Makefile solicitará `sudo` apenas nas operações que exigem privilégios administrativos:
 
 ```bash
-# Prepara os filesystems, gera vmlinux.h e compila os programas eBPF.
 make setup
 ```
 
@@ -98,7 +97,6 @@ Esse comando verifica BTF, prepara os filesystems, gera `vmlinux.h` e compila os
 Depois que a preparação terminar, carregue e anexe os programas:
 
 ```bash
-# Carrega e anexa o Kprobe e, quando disponível, o programa BPF LSM.
 make attach
 ```
 
@@ -229,7 +227,6 @@ Siga esta ordem para encerrar:
 2. No mesmo terminal, execute:
 
 ```bash
-# Desanexa do kernel os programas e links fixados pelo Lab 1.
 make detach
 ```
 
@@ -255,7 +252,6 @@ Execute `make clean` quando terminar os testes e não precisar mais repetir o
 experimento:
 
 ```bash
-# Remove vmlinux.h e os objetos compilados gerados pelo laboratório.
 make clean
 ```
 

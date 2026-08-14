@@ -112,10 +112,7 @@ Este passo a passo considera que o ambiente do README principal já foi preparad
 Confirme:
 
 ```bash
-# Mostra o caminho atual para confirmar que o terminal está no repositório.
 pwd
-
-# Lista o conteúdo; a saída deve incluir o diretório Lab2-XDP_vs_TC.
 ls
 ```
 
@@ -124,30 +121,26 @@ ls
 ### 1. Entre no Lab 2
 
 ```bash
-# Entra no diretório que contém os arquivos do Lab 2.
 cd Lab2-XDP_vs_TC
 ```
 
 ### 2. Conheça os alvos
 
 ```bash
-# Exibe os alvos disponíveis no Makefile e a finalidade de cada um.
 make help
 ```
 
 ### 3. Verifique o ambiente
 
 ```bash
-# Verifica compilador, Docker, Containerlab, ferramentas de rede e Docker daemon.
 make check
 ```
 
-Essa etapa confirma Clang, Docker, Containerlab, `ip`, `tc` e o Docker daemon.
+Essa etapa confirma o ambiente possui Clang, Docker, Containerlab, `ip`, `tc` e o Docker daemon.
 
 ### 4. Prepare o ambiente
 
 ```bash
-# Compila os programas, cria os containers e configura a rede experimental.
 make setup
 ```
 O Makefile compila os programas, cria os dois containers e configura a rede experimental. Nenhum filtro é anexado e nenhum teste é executado nessa etapa.
@@ -360,7 +353,6 @@ Resultado esperado:
 Depois de observar os contadores e o bloqueio, remova o classificador TC:
 
 ```bash
-# Remove o clsact e o programa eBPF anexado ao egress de h2:eth1.
 make detach-tc
 ```
 

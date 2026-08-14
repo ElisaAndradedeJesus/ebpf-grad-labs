@@ -77,14 +77,12 @@ Este passo a passo considera que o ambiente descrito no README principal já foi
 ### 1. Entre na pasta
 
 ```bash
-# Entra no diretório que contém os arquivos do Lab 3.
 cd Lab3-Mapas_eBPF_Firewall
 ```
 
 ### 2. Conheça os comandos disponíveis
 
 ```bash
-# Exibe os alvos disponíveis no Makefile e a finalidade de cada um.
 make help
 ```
 
@@ -98,7 +96,6 @@ make check
 ### 4. Monte o ambiente
 
 ```bash
-# Compila o programa, cria os containers e configura os endereços IPv4.
 make setup
 ```
 
@@ -143,7 +140,6 @@ Como nenhuma chave foi cadastrada, a busca no Map não encontra o endereço e o 
 ### Experimento 3: alterar a política pelo Map
 
 ```bash
-# Insere 10.0.1.2 na blacklist e testa o bloqueio seletivo.
 make test-block
 ```
 
@@ -224,7 +220,7 @@ sudo bpftool map dump id "$(cat /tmp/ebpf-lab3-map-id)"
 Depois dos testes, desanexe o programa sem destruir os containers:
 
 ```bash
-# Remove somente o programa XDP, preservando a topologia do laboratório.
+# Remove somente o programa XDP.
 make detach-xdp
 ```
 
