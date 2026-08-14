@@ -9,6 +9,11 @@ O Kprobe será anexado à função `__x64_sys_execve` do kernel para registrar a
 
 > Este laboratório foi preparado para o ambiente x86-64 utilizado no curso, com Ubuntu sobre WSL 2. O nome da função observada pelo Kprobe pode ser diferente em outras arquiteturas ou versões do kernel.
 
+> **Antes de executar o experimento com BPF LSM:** siga o guia
+> [Habilitar o BPF LSM](ATIVAR-BPF-LSM.md). O Kprobe funciona sem essa
+> configuração, mas o bloqueio do `curl` exige que o BPF LSM esteja ativo no
+> kernel.
+
 ## Antes de começar
 
 Este passo a passo considera que:
@@ -17,199 +22,14 @@ Este passo a passo considera que:
 - `clang`, `gcc`, `bpftool` e `libbpf` estão instalados;
 - `/sys/kernel/btf/vmlinux` está disponível.
 
-### Habilitar o BPF LSM no WSL 2
-
-Este laboratório possui duas partes. O Kprobe funciona sem o BPF LSM, mas o
-experimento que bloqueia a execução do `curl` exige que o LSM `bpf` esteja
-ativo desde a inicialização do kernel.
-
-#### 1. Verifique os LSMs ativos
-
-Primeiro, confirme que o `securityfs` está montado:
-
-```bash
-sudo mkdir -p /sys/kernel/security
-mountpoint -q /sys/kernel/security || \
-sudo mount -t securityfs securityfs /sys/kernel/security
-```
-
-Consulte os Linux Security Modules ativos:
-
-```bash
-sudo cat /sys/kernel/security/lsm
-```
-
-Se a saída contiver `bpf`, nenhuma alteração é necessária. Continue em
-[Retorne ao repositório](#retorne-ao-repositório).
-
-Se `bpf` não aparecer, siga as próximas etapas.
-
-#### 2. Verifique o suporte do kernel
-
-O BPF LSM precisa estar incluído na configuração usada para compilar o kernel:
-
-```bash
-zgrep '^CONFIG_BPF_LSM=' /proc/config.gz 2>/dev/null || \
-grep '^CONFIG_BPF_LSM=' /boot/config-"$(uname -r)" 2>/dev/null
-```
-
-O resultado esperado é:
-
-```text
-CONFIG_BPF_LSM=y
-```
-
-Se nenhum dos arquivos de configuração estiver disponível, isso não prova que
-o recurso está ausente. Atualize o WSL pelo PowerShell:
-
-```powershell
-wsl --update
-wsl --shutdown
-```
-
-Abra novamente o Ubuntu e repita a verificação.
-
-Se o resultado for:
-
-```text
-# CONFIG_BPF_LSM is not set
-```
-
-o kernel atual não possui suporte ao BPF LSM. Nesse caso, será necessário
-utilizar uma versão atualizada do kernel do WSL ou um kernel personalizado
-compilado com `CONFIG_BPF_LSM=y`.
-
-#### 3. Ative o BPF LSM na inicialização
-
-> Esta configuração é realizada no Windows e se aplica globalmente às
-> distribuições executadas com WSL 2.
-
-No PowerShell, abra o arquivo `.wslconfig`:
-
-```powershell
-notepad $env:USERPROFILE\.wslconfig
-```
-
-Se o arquivo não existir, o Bloco de Notas perguntará se deseja criá-lo.
-
-Adicione:
-
-```ini
-[wsl2]
-kernelCommandLine=lsm=landlock,lockdown,yama,integrity,apparmor,bpf
-```
-
-Se o arquivo já possuir uma seção `[wsl2]`, não crie outra: adicione somente
-a propriedade `kernelCommandLine` dentro da seção existente.
-
-Se já existir uma propriedade `kernelCommandLine`, preserve os outros
-parâmetros. Caso ela ainda não possua `lsm=`, acrescente o parâmetro na mesma
-linha, separado por espaço. Caso já possua `lsm=`, não crie um segundo:
-acrescente `bpf` à lista existente.
-
-> O parâmetro `lsm=` define a lista de módulos de segurança habilitados durante
-> a inicialização. Não utilize apenas `lsm=bpf`, pois isso pode retirar outros
-> mecanismos de segurança da lista.
-
-Salve e feche o arquivo.
-
-#### 4. Reinicie o WSL 2
-
-Feche trabalhos em execução nas distribuições WSL. Em seguida, execute no
-PowerShell:
-
-```powershell
-wsl --shutdown
-```
-
-Esse comando encerra todas as distribuições WSL abertas. Depois, abra
-novamente o Ubuntu.
-
-#### 5. Confirme a ativação
-
-No Ubuntu, verifique se o parâmetro foi recebido pelo kernel:
-
-```bash
-cat /proc/cmdline
-```
-
-A saída deve conter:
-
-```text
-lsm=landlock,lockdown,yama,integrity,apparmor,bpf
-```
-
-O comando `wsl --shutdown` encerra o kernel, e montagens realizadas manualmente
-podem não permanecer depois que o WSL for iniciado novamente. Por isso,
-verifique o `securityfs` outra vez. O bloco abaixo só realiza a montagem quando
-ela ainda não existe:
-
-```bash
-sudo mkdir -p /sys/kernel/security
-
-if mountpoint -q /sys/kernel/security; then
-    echo "securityfs já está montado."
-else
-    sudo mount -t securityfs securityfs /sys/kernel/security
-    echo "securityfs foi montado."
-fi
-```
-
-Confira novamente os LSMs ativos:
-
-```bash
-sudo cat /sys/kernel/security/lsm
-```
-
-A lista deve conter `bpf`. Por exemplo:
-
-```text
-capability,landlock,lockdown,yama,integrity,apparmor,bpf
-```
-
-O módulo `capability` pode aparecer automaticamente mesmo sem estar escrito no
-parâmetro `lsm=`.
-
-Quando `bpf` aparecer na lista, a ativação estará concluída e as duas partes
-do laboratório poderão ser executadas.
-
-#### Restaurar a configuração anterior
-
-Para desfazer a ativação, abra novamente o arquivo no PowerShell:
-
-```powershell
-notepad $env:USERPROFILE\.wslconfig
-```
-
-Remova somente o parâmetro `lsm=...` adicionado por este laboratório, preserve
-as demais configurações e execute:
-
-```powershell
-wsl --shutdown
-```
-
-> **Está utilizando o Ubuntu instalado diretamente?**
-> O ambiente principal deste laboratório é o WSL 2, mas o BPF LSM também pode
-> ser habilitado em uma instalação convencional do Ubuntu por meio do GRUB.
-> Consulte [Habilitar o BPF LSM no Ubuntu instalado diretamente](#habilitar-o-bpf-lsm-no-ubuntu-instalado-diretamente).
-
-### Retorne ao repositório
-
-Depois de `wsl --shutdown`, o novo terminal Ubuntu normalmente será aberto no
-diretório inicial do usuário, e não na pasta em que o laboratório foi clonado.
-Entre novamente na raiz do repositório:
-
-```bash
-cd ~/ebpf-grad-labs
-```
-
-Se o repositório foi clonado em outro local, substitua o caminho acima pelo
-diretório correspondente.
 
 Confirme sua localização:
 
 ```bash
+# Mostra o caminho do diretório atual.
 pwd
+
+# Lista os arquivos e diretórios existentes na raiz do repositório.
 ls
 ```
 
@@ -235,18 +55,21 @@ caso ainda não estejam montados. `make attach` anexa os programas ao kernel,
 Partindo da raiz do repositório:
 
 ```bash
+# Entra no diretório que contém os arquivos do Lab 1.
 cd Lab1-Tipos_eBPF
 ```
 
 Confira os arquivos:
 
 ```bash
+# Lista os arquivos do laboratório para confirmar a localização.
 ls
 ```
 
 ### 2. Conheça os comandos disponíveis
 
 ```bash
+# Exibe os alvos disponíveis no Makefile e a finalidade de cada um.
 make help
 ```
 
@@ -255,6 +78,7 @@ make help
 Execute:
 
 ```bash
+# Verifica se as ferramentas e os recursos exigidos pelo laboratório existem.
 make check
 ```
 
@@ -263,6 +87,7 @@ make check
 O Makefile solicitará `sudo` apenas nas operações que exigem privilégios administrativos:
 
 ```bash
+# Prepara os filesystems, gera vmlinux.h e compila os programas eBPF.
 make setup
 ```
 
@@ -273,6 +98,7 @@ Esse comando verifica BTF, prepara os filesystems, gera `vmlinux.h` e compila os
 Depois que a preparação terminar, carregue e anexe os programas:
 
 ```bash
+# Carrega e anexa o Kprobe e, quando disponível, o programa BPF LSM.
 make attach
 ```
 
@@ -319,12 +145,14 @@ O Terminal 1 exibe a mensagem pelo trace_pipe
 No mesmo Terminal 1 em que você executou `make attach`, execute:
 
 ```bash
+# Exibe continuamente as mensagens de tracing produzidas pelo Kprobe.
 sudo cat /sys/kernel/tracing/trace_pipe
 ```
 
 Se esse caminho não existir, tente:
 
 ```bash
+# Usa o caminho alternativo do trace_pipe em kernels que montam tracefs em debugfs.
 sudo cat /sys/kernel/debug/tracing/trace_pipe
 ```
 
@@ -335,8 +163,13 @@ Deixe esse comando em execução. O terminal ficará aparentemente parado enquan
 Abra um segundo terminal Ubuntu e execute, um de cada vez:
 
 ```bash
+# Lista o conteúdo do diretório e gera um evento de execução.
 ls
+
+# Exibe a data e a hora atuais e gera outro evento de execução.
 date
+
+# Mostra o nome do usuário atual e gera mais um evento de execução.
 whoami
 ```
 
@@ -359,6 +192,7 @@ O programa usa `bpf_get_current_comm()` no início de `execve`. Nesse momento, o
 Ainda no Terminal 2, confirme que o programa está carregado no kernel:
 
 ```bash
+# Lista os programas eBPF carregados e mostra trace_exec com quatro linhas de contexto.
 sudo bpftool prog list | grep -A 4 trace_exec
 ```
 
@@ -395,6 +229,7 @@ Siga esta ordem para encerrar:
 2. No mesmo terminal, execute:
 
 ```bash
+# Desanexa do kernel os programas e links fixados pelo Lab 1.
 make detach
 ```
 
@@ -409,6 +244,8 @@ no diretório. Assim, você pode executar `make attach` novamente sem repetir
 Para confirmar que os programas foram desanexados, execute no Terminal 1:
 
 ```bash
+# Confirma que o diretório fixado no bpffs foi removido.
+# A mensagem só é exibida se o caminho realmente não existir.
 sudo test ! -e /sys/fs/bpf/ebpf_lab1 && echo "Programas eBPF desanexados com sucesso"
 ```
 
@@ -418,6 +255,7 @@ Execute `make clean` quando terminar os testes e não precisar mais repetir o
 experimento:
 
 ```bash
+# Remove vmlinux.h e os objetos compilados gerados pelo laboratório.
 make clean
 ```
 
@@ -433,6 +271,7 @@ e solicitará que você execute `make detach` primeiro.
 Para confirmar que a limpeza funcionou:
 
 ```bash
+# Verifica, em sequência, se os objetos do kernel e os arquivos gerados sumiram.
 sudo test ! -e /sys/fs/bpf/ebpf_lab1 && \
 test ! -e kprobe_exec.bpf.o && \
 test ! -e lsm_block.bpf.o && \
@@ -447,7 +286,10 @@ echo "Lab 1 removido com sucesso"
 Execute novamente e informe a senha do usuário Ubuntu quando `sudo` solicitar:
 
 ```bash
+# Prepara novamente o laboratório após informar a senha solicitada pelo sudo.
 make setup
+
+# Tenta carregar e anexar novamente os programas.
 make attach
 ```
 
@@ -456,13 +298,17 @@ make attach
 No PowerShell do Windows, atualize e reinicie o WSL:
 
 ```powershell
+# Baixa e instala a atualização mais recente disponível para o WSL.
 wsl --update
+
+# Encerra as distribuições e o kernel do WSL para aplicar a atualização.
 wsl --shutdown
 ```
 
 Abra novamente o Ubuntu e confirme:
 
 ```bash
+# Mostra tamanho, permissões e existência do BTF fornecido pelo kernel.
 ls -lh /sys/kernel/btf/vmlinux
 ```
 
@@ -471,20 +317,27 @@ ls -lh /sys/kernel/btf/vmlinux
 Verifique se o BPF filesystem está montado:
 
 ```bash
+# Verifica se /sys/fs/bpf já é um ponto de montagem.
 mountpoint /sys/fs/bpf
 ```
 
 Se necessário, monte-o manualmente:
 
 ```bash
+# Cria o diretório usado como ponto de montagem do bpffs, se necessário.
 sudo mkdir -p /sys/fs/bpf
+
+# Monta o BPF filesystem, usado para fixar objetos eBPF no kernel.
 sudo mount -t bpf bpf /sys/fs/bpf
 ```
 
 Depois, execute novamente:
 
 ```bash
+# Prepara novamente os arquivos e programas do laboratório.
 make setup
+
+# Carrega e anexa os programas após corrigir a montagem do bpffs.
 make attach
 ```
 
@@ -493,6 +346,7 @@ make attach
 Confira o símbolo disponível no kernel:
 
 ```bash
+# Procura no kallsyms o símbolo de execve esperado pelo Kprobe.
 sudo grep -E ' (__x64_sys_execve|sys_execve)$' /proc/kallsyms
 ```
 
@@ -503,147 +357,23 @@ Este laboratório espera encontrar `__x64_sys_execve`. Se apenas outro símbolo 
 Confira se `tracefs` está montado:
 
 ```bash
+# Procura uma montagem tracefs entre os filesystems atualmente montados.
 mount | grep tracefs
 ```
 
 Se não estiver, execute:
 
 ```bash
+# Cria o diretório usado como ponto de montagem do tracefs, se necessário.
 sudo mkdir -p /sys/kernel/tracing
+
+# Monta o tracefs para disponibilizar as interfaces de tracing do kernel.
 sudo mount -t tracefs tracefs /sys/kernel/tracing
 ```
 
 Depois, tente novamente:
 
 ```bash
+# Lê continuamente as mensagens emitidas pelos programas de tracing.
 sudo cat /sys/kernel/tracing/trace_pipe
-```
-
-## Habilitar o BPF LSM no Ubuntu instalado diretamente
-
-> O ambiente principal deste laboratório é Ubuntu sobre WSL 2. Esta seção é
-> uma alternativa para instalações convencionais do Ubuntu Desktop ou Server
-> que utilizam o GRUB. Ubuntu Core, Raspberry Pi e sistemas com outro
-> bootloader podem exigir procedimentos diferentes.
-
-Em uma instalação convencional do Ubuntu, os parâmetros de inicialização são
-configurados no GRUB, e não no arquivo `.wslconfig` do Windows.
-
-### 1. Verifique o suporte do kernel
-
-Confirme se o kernel foi compilado com suporte ao BPF LSM:
-
-```bash
-zgrep '^CONFIG_BPF_LSM=' /proc/config.gz 2>/dev/null || \
-grep '^CONFIG_BPF_LSM=' /boot/config-"$(uname -r)" 2>/dev/null
-```
-
-O resultado esperado é:
-
-```text
-CONFIG_BPF_LSM=y
-```
-
-Se o resultado indicar `# CONFIG_BPF_LSM is not set`, o kernel atual não
-oferece esse recurso. Atualize o kernel por um mecanismo compatível com a
-versão do Ubuntu utilizada antes de continuar.
-
-### 2. Identifique os LSMs ativos
-
-Confirme que o `securityfs` está montado e consulte a lista atual:
-
-```bash
-sudo mkdir -p /sys/kernel/security
-
-if mountpoint -q /sys/kernel/security; then
-    echo "securityfs já está montado."
-else
-    sudo mount -t securityfs securityfs /sys/kernel/security
-    echo "securityfs foi montado."
-fi
-
-sudo cat /sys/kernel/security/lsm
-```
-
-Anote a lista exibida. O próximo passo deve preservar os LSMs existentes e
-acrescentar `bpf`. Não copie uma lista de outra máquina, pois os mecanismos
-disponíveis podem variar entre kernels e distribuições.
-
-Por exemplo, se a saída for:
-
-```text
-capability,landlock,lockdown,yama,integrity,apparmor
-```
-
-use no parâmetro de inicialização:
-
-```text
-lsm=landlock,lockdown,yama,integrity,apparmor,bpf
-```
-
-O LSM `capability` não precisa ser incluído no parâmetro `lsm=`, pois o kernel
-o ativa automaticamente.
-
-### 3. Adicione o parâmetro ao GRUB
-
-Crie um arquivo adicional de configuração, sem alterar diretamente
-`/etc/default/grub`:
-
-```bash
-sudo nano /etc/default/grub.d/99-bpf-lsm.cfg
-```
-
-Adicione uma única linha. Substitua a lista do exemplo pelos LSMs encontrados
-na etapa anterior, preserve a ordem deles e mantenha `bpf` ao final:
-
-```bash
-GRUB_CMDLINE_LINUX="${GRUB_CMDLINE_LINUX} lsm=landlock,lockdown,yama,integrity,apparmor,bpf"
-```
-
-No Nano, pressione `Ctrl+O`, `Enter` e `Ctrl+X` para salvar e sair.
-
-Atualize a configuração de inicialização:
-
-```bash
-sudo update-grub
-```
-
-O comando deve terminar sem erros. A alteração somente terá efeito depois da
-reinicialização.
-
-### 4. Reinicie e confirme a ativação
-
-Reinicie o Ubuntu:
-
-```bash
-sudo reboot
-```
-
-Depois que o sistema iniciar novamente, confirme que o kernel recebeu o
-parâmetro:
-
-```bash
-cat /proc/cmdline
-```
-
-A saída deve conter a lista `lsm=...` configurada na etapa anterior. Confira
-também os LSMs efetivamente ativos:
-
-```bash
-sudo cat /sys/kernel/security/lsm
-```
-
-A lista deve preservar os mecanismos anteriores e conter `bpf`. Quando isso
-acontecer, retorne à raiz do repositório e execute normalmente `make setup` e
-`make attach` conforme as instruções deste laboratório.
-
-### Restaurar a configuração anterior no Ubuntu
-
-Para desfazer somente a configuração criada por este laboratório, remova o
-arquivo `99-bpf-lsm.cfg`, atualize o GRUB e reinicie:
-
-```bash
-sudo rm /etc/default/grub.d/99-bpf-lsm.cfg
-sudo update-grub
-sudo reboot
 ```

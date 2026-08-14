@@ -77,24 +77,28 @@ Este passo a passo considera que o ambiente descrito no README principal já foi
 ### 1. Entre na pasta
 
 ```bash
+# Entra no diretório que contém os arquivos do Lab 3.
 cd Lab3-Mapas_eBPF_Firewall
 ```
 
 ### 2. Conheça os comandos disponíveis
 
 ```bash
+# Exibe os alvos disponíveis no Makefile e a finalidade de cada um.
 make help
 ```
 
 ### 3. Verifique as dependências
 
 ```bash
+# Verifica as ferramentas e os recursos exigidos pelo laboratório.
 make check
 ```
 
 ### 4. Monte o ambiente
 
 ```bash
+# Compila o programa, cria os containers e configura os endereços IPv4.
 make setup
 ```
 
@@ -107,6 +111,7 @@ Os testes devem ser executados na ordem apresentada. Cada comando mostra primeir
 ### Experimento 1: estabelecer a linha de base
 
 ```bash
+# Testa os dois endereços de origem antes de anexar o programa XDP.
 make test-baseline
 ```
 
@@ -122,6 +127,7 @@ Os dois devem funcionar. Essa linha de base demonstra que os endereços e o enla
 ### Experimento 2: anexar XDP com a blacklist vazia
 
 ```bash
+# Anexa o XDP com a blacklist vazia e confirma que o tráfego é permitido.
 make test-empty-map
 ```
 
@@ -137,6 +143,7 @@ Como nenhuma chave foi cadastrada, a busca no Map não encontra o endereço e o 
 ### Experimento 3: alterar a política pelo Map
 
 ```bash
+# Insere 10.0.1.2 na blacklist e testa o bloqueio seletivo.
 make test-block
 ```
 
@@ -182,6 +189,7 @@ são `100% packet loss` para `10.0.1.2` e `0% packet loss` para `10.0.1.3`.
 ### Experimento 4: remover a origem da blacklist
 
 ```bash
+# Remove 10.0.1.2 da blacklist e confirma a restauração da conectividade.
 make test-unblock
 ```
 
@@ -194,14 +202,20 @@ Essa transição mostra a comunicação entre o userspace e o programa eBPF por 
 Enquanto a topologia e o XDP estiverem ativos, você pode consultar os objetos em outro terminal:
 
 ```bash
+# Lista os programas eBPF atualmente carregados no kernel.
 sudo bpftool prog list
+
+# Lista os Maps eBPF atualmente existentes no kernel.
 sudo bpftool map list
+
+# Mostra os detalhes do XDP anexado a eth1 no namespace de h1.
 sudo ip netns exec h1 ip -details link show dev eth1
 ```
 
 O Makefile guarda temporariamente o ID do Map em `/tmp/ebpf-lab3-map-id`. Para exibir a blacklist usada pelo experimento:
 
 ```bash
+# Lê o ID registrado pelo Makefile e exibe todas as entradas da blacklist.
 sudo bpftool map dump id "$(cat /tmp/ebpf-lab3-map-id)"
 ```
 
@@ -210,6 +224,7 @@ sudo bpftool map dump id "$(cat /tmp/ebpf-lab3-map-id)"
 Depois dos testes, desanexe o programa sem destruir os containers:
 
 ```bash
+# Remove somente o programa XDP, preservando a topologia do laboratório.
 make detach-xdp
 ```
 
@@ -230,12 +245,14 @@ O laboratório é considerado bem-sucedido quando:
 Quando terminar, destrua a topologia, remova os namespaces auxiliares, desfaça os objetos e apague o arquivo compilado:
 
 ```bash
+# Destrói a topologia e remove namespaces, objetos e arquivos gerados pelo Lab 3.
 make clean
 ```
 
 Confirme que os containers foram removidos:
 
 ```bash
+# Procura containers do Lab 3 ainda ativos; exibe a mensagem se não encontrar nenhum.
 sudo docker ps --format '{{.Names}}' | grep clab-ebpf-lab3 || echo "Lab 3 removido"
 ```
 
@@ -244,8 +261,13 @@ sudo docker ps --format '{{.Names}}' | grep clab-ebpf-lab3 || echo "Lab 3 removi
 ### Docker não respondeu
 
 ```bash
+# Inicia o serviço do Docker dentro do Ubuntu/WSL.
 sudo service docker start
+
+# Confirma que o Docker daemon está respondendo e mostra seus detalhes.
 sudo docker info
+
+# Repete a verificação do ambiente após iniciar o Docker.
 make check
 ```
 
@@ -254,7 +276,10 @@ make check
 Se um teste solicitar `make setup`, execute:
 
 ```bash
+# Remove uma preparação incompleta ou recursos de uma execução anterior.
 make clean
+
+# Recompila o programa e recria a topologia.
 make setup
 ```
 
@@ -265,10 +290,19 @@ Depois retome o experimento desejado. Para `test-block` e `test-unblock`, respei
 Limpe uma possível execução incompleta e verifique o suporte do kernel:
 
 ```bash
+# Remove recursos de uma possível execução incompleta.
 make clean
+
+# Examina os recursos eBPF disponibilizados pelo kernel.
 sudo bpftool feature probe kernel
+
+# Recompila o programa e recria a topologia.
 make setup
+
+# Confirma a conectividade antes de anexar o XDP.
 make test-baseline
+
+# Anexa o XDP com o Map vazio e verifica se os pacotes continuam permitidos.
 make test-empty-map
 ```
 
@@ -279,6 +313,9 @@ Se `bpftool feature probe kernel` indicar que XDP ou os tipos de Map necessário
 Isso acontece quando o programa XDP foi desanexado depois da criação do Map. Crie uma nova instância:
 
 ```bash
+# Cria uma nova instância do XDP e registra o novo Map vazio.
 make test-empty-map
+
+# Insere novamente a origem na blacklist e repete o teste de bloqueio.
 make test-block
 ```

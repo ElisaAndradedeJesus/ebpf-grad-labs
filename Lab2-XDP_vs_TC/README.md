@@ -112,7 +112,10 @@ Este passo a passo considera que o ambiente do README principal já foi preparad
 Confirme:
 
 ```bash
+# Mostra o caminho atual para confirmar que o terminal está no repositório.
 pwd
+
+# Lista o conteúdo; a saída deve incluir o diretório Lab2-XDP_vs_TC.
 ls
 ```
 
@@ -121,18 +124,21 @@ ls
 ### 1. Entre no Lab 2
 
 ```bash
+# Entra no diretório que contém os arquivos do Lab 2.
 cd Lab2-XDP_vs_TC
 ```
 
 ### 2. Conheça os alvos
 
 ```bash
+# Exibe os alvos disponíveis no Makefile e a finalidade de cada um.
 make help
 ```
 
 ### 3. Verifique o ambiente
 
 ```bash
+# Verifica compilador, Docker, Containerlab, ferramentas de rede e Docker daemon.
 make check
 ```
 
@@ -141,6 +147,7 @@ Essa etapa confirma Clang, Docker, Containerlab, `ip`, `tc` e o Docker daemon.
 ### 4. Prepare o ambiente
 
 ```bash
+# Compila os programas, cria os containers e configura a rede experimental.
 make setup
 ```
 O Makefile compila os programas, cria os dois containers e configura a rede experimental. Nenhum filtro é anexado e nenhum teste é executado nessa etapa.
@@ -152,14 +159,22 @@ Depois de `make setup`, a topologia permanece ativa durante os experimentos e s�
 O Lab 2 possui dois experimentos separados. Primeiro estudamos XDP no ingresso de `h1`; depois estudamos TC na saída de `h2`.
 
 ```bash
-# Experimento XDP
+# Executa a linha de base do XDP ainda sem o filtro.
 make test-xdp-baseline
+
+# Anexa o XDP e testa o bloqueio de ICMP no ingresso.
 make test-xdp-filter
+
+# Remove o programa XDP antes do experimento seguinte.
 make detach-xdp
 
-# Experimento TC
+# Executa a linha de base do TC ainda sem o filtro.
 make test-tc-baseline
+
+# Anexa o TC e testa o bloqueio de TCP/80 no egress.
 make test-tc-filter
+
+# Remove o classificador TC ao final do experimento.
 make detach-tc
 ```
 
@@ -191,6 +206,7 @@ Usaremos dois testes: uma linha de base sem XDP e a repetição do mesmo ping co
 Execute:
 
 ```bash
+# Testa a comunicação ICMP antes de anexar o programa XDP.
 make test-xdp-baseline
 ```
 
@@ -244,6 +260,7 @@ Essa é a linha de base: ela prova que endereçamento, enlace e rota funcionam a
 Execute:
 
 ```bash
+# Anexa o XDP ao ingresso de h1 e testa o descarte de pacotes ICMP.
 make test-xdp-filter
 ```
 
@@ -268,6 +285,7 @@ O ping falhar agora é uma evidência válida porque a mesma comunicação funci
 Depois de observar o bloqueio, desanexe o programa antes de iniciar o experimento TC:
 
 ```bash
+# Remove somente o programa XDP anexado a h1:eth1.
 make detach-xdp
 ```
 
@@ -298,6 +316,7 @@ Agora o tráfego testado não é ICMP, mas uma conexão TCP destinada à porta 8
 Execute:
 
 ```bash
+# Testa a conexão TCP/80 antes de anexar o classificador TC.
 make test-tc-baseline
 ```
 
@@ -322,6 +341,7 @@ Essa linha de base prova que o servidor, a porta e o caminho de rede funcionam a
 Execute:
 
 ```bash
+# Anexa o TC ao egress de h2 e testa o descarte de tráfego TCP/80.
 make test-tc-filter
 ```
 
@@ -340,6 +360,7 @@ Resultado esperado:
 Depois de observar os contadores e o bloqueio, remova o classificador TC:
 
 ```bash
+# Remove o clsact e o programa eBPF anexado ao egress de h2:eth1.
 make detach-tc
 ```
 
@@ -371,14 +392,17 @@ Neste exemplo:
 A topologia continua ativa depois de cada teste. Em outro terminal, você também pode inspecionar:
 
 ```bash
+# Entra no namespace de h1 e mostra detalhes do XDP anexado a eth1.
 sudo ip netns exec h1 ip -details link show dev eth1
 ```
 
 ```bash
+# Entra no namespace de h2 e lista os filtros TC no egress de eth1.
 sudo ip netns exec h2 tc filter show dev eth1 egress
 ```
 
 ```bash
+# Lista todos os programas eBPF atualmente carregados no kernel.
 sudo bpftool prog list
 ```
 
@@ -393,12 +417,14 @@ O teste é bem-sucedido quando:
 Quando terminar os testes e a inspeção, destrua a topologia, remova os namespaces auxiliares e apague `xdp.o` e `tc.o`:
 
 ```bash
+# Destrói a topologia e remove os namespaces e objetos compilados do Lab 2.
 make clean
 ```
 
 Confirme:
 
 ```bash
+# Procura containers do Lab 2 ainda ativos; exibe a mensagem se não encontrar nenhum.
 sudo docker ps --format '{{.Names}}' | grep clab-ebpf-lab2 || echo "Lab 2 removido"
 ```
 
@@ -407,14 +433,20 @@ sudo docker ps --format '{{.Names}}' | grep clab-ebpf-lab2 || echo "Lab 2 removi
 ### Docker daemon indisponível
 
 ```bash
+# Inicia o serviço do Docker dentro do Ubuntu/WSL.
 sudo service docker start
+
+# Repete a verificação do ambiente depois de iniciar o serviço.
 make check
 ```
 
 ### Uma topologia anterior ainda está ativa
 
 ```bash
+# Remove uma execução anterior e seus recursos.
 make clean
+
+# Recria a topologia e recompila os programas.
 make setup
 ```
 
@@ -427,36 +459,55 @@ Confirme o acesso à internet e tente novamente. Na primeira execução, os cont
 Primeiro, remova qualquer programa XDP que tenha permanecido anexado e repita o teste:
 
 ```bash
+# Remove qualquer XDP que tenha permanecido anexado.
 make detach-xdp
+
+# Repete o teste que anexa o filtro XDP.
 make test-xdp-filter
 ```
 
 Se a falha continuar, confira se o kernel oferece o tipo de programa XDP:
 
 ```bash
+# Examina os recursos e tipos XDP oferecidos pelo kernel.
 sudo bpftool feature probe kernel | grep -i -A 8 xdp
 ```
 
 Confira também o estado da interface virtual:
 
 ```bash
+# Exibe detalhes da interface eth1 dentro do namespace de h1.
 sudo ip netns exec h1 ip -details link show dev eth1
 ```
 
 Se o kernel WSL estiver desatualizado, execute no PowerShell do Windows:
 
 ```powershell
+# Baixa e instala a atualização mais recente disponível para o WSL.
 wsl --update
+
+# Encerra as distribuições e o kernel do WSL para aplicar a atualização.
 wsl --shutdown
 ```
 
 Abra novamente o Ubuntu, inicie o Docker e recrie o laboratório:
 
 ```bash
+# Inicia o serviço do Docker na nova sessão Ubuntu.
 sudo service docker start
+
+# Entra diretamente no diretório do Lab 2.
 cd ~/ebpf-grad-labs/Lab2-XDP_vs_TC
+
+# Remove recursos que possam ter restado da execução anterior.
 make clean
+
+# Compila os programas e recria a topologia.
 make setup
+
+# Confirma que a comunicação ICMP funciona sem o filtro.
 make test-xdp-baseline
+
+# Anexa o XDP e repete o teste de bloqueio.
 make test-xdp-filter
 ```
